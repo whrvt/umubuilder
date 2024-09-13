@@ -173,11 +173,11 @@ _install() {
     # Copy the required dlls into the package, they will be copied later into the prefix
     # by the patched proton script. Bundle them to not depend on mingw-w64-gcc being installed.
 
-    { cp /usr/i686-w64-mingw32/bin/{libgcc_s_dw2-1.dll,libwinpthread-1.dll} \
-        "${installdir}"/files/lib/vkd3d/ &&
-      cp /usr/x86_64-w64-mingw32/bin/{libgcc_s_seh-1.dll,libwinpthread-1.dll} \
-        "${installdir}"/files/lib64/vkd3d/ ; } ||
-      _failure "Couldn't copy mingw files from /usr/{i686,x86_64}-w64-mingw/bin files to the install directory, you should install mingw-gcc."
+    # { cp /usr/i686-w64-mingw32/bin/{libgcc_s_dw2-1.dll,libwinpthread-1.dll} \
+    #     "${installdir}"/files/lib/vkd3d/ &&
+    #   cp /usr/x86_64-w64-mingw32/bin/{libgcc_s_seh-1.dll,libwinpthread-1.dll} \
+    #     "${installdir}"/files/lib64/vkd3d/ ; } ||
+    #   _failure "Couldn't copy mingw files from /usr/{i686,x86_64}-w64-mingw/bin files to the install directory, you should install mingw-gcc."
     
     _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${pkgname}"
     _message "Along with the archive in the current directory"
