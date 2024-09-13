@@ -1,0 +1,13 @@
+diff --git a/dlls/winex11.drv/vulkan.c b/dlls/winex11.drv/vulkan.c
+index e0bd3e3d656..6802b238137 100644
+--- a/dlls/winex11.drv/vulkan.c
++++ b/dlls/winex11.drv/vulkan.c
+@@ -364,7 +364,7 @@ void sync_vk_surface( HWND hwnd, BOOL known_child )
+         static BOOL once = FALSE;
+ 
+         if (!once++)
+-            FIXME("Vulkan child window rendering is disabled.\n");
++            WARN("Vulkan child window rendering is disabled.\n");
+         else
+             WARN("Vulkan child window rendering is disabled.\n");
+         return;

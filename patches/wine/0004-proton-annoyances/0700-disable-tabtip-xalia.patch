@@ -1,0 +1,37 @@
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index a508d741784..499515dbaf4 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -1212,9 +1212,11 @@ void manage_desktop( WCHAR *arg )
+     if (hwnd)
+     {
+         /* FIXME: hack, run tabtip.exe on startup. */
+-        tabtip = start_tabtip_process();
++        // tabtip = start_tabtip_process();
++        // or not
+ 
+-        start_xalia_process();
++        // start_xalia_process();
++        // also don't do this
+ 
+         TRACE( "desktop message loop starting on hwnd %p\n", hwnd );
+         while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
+@@ -1223,12 +1225,12 @@ void manage_desktop( WCHAR *arg )
+ 
+     if (pShellDDEInit) pShellDDEInit( FALSE );
+ 
+-    if (tabtip)
+-    {
+-        TerminateProcess( tabtip, 0 );
+-        WaitForSingleObject( tabtip, INFINITE );
+-        CloseHandle( tabtip );
+-    }
++    // if (tabtip)
++    // {
++    //     TerminateProcess( tabtip, 0 );
++    //     WaitForSingleObject( tabtip, INFINITE );
++    //     CloseHandle( tabtip );
++    // }
+ 
+     ExitProcess( 0 );
+ }

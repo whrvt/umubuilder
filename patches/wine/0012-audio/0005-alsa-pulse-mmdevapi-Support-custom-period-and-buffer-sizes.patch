@@ -1,0 +1,166 @@
+From: William Horvath <william@horvath.blog>
+Date: Tue, 27 Aug 2024 05:03:23 -0700
+Subject: [PATCH 5/5] alsa,pulse,mmdevapi: Support custom period and buffer sizes, and respect PulseAudio settings.
+
+Relevant environment variables are: 
+ALSA_EXTRA_PAD (units: usecs*10; default is 40000, can be set to 0, adds extra padding)
+STAGING_AUDIO_PERIOD (units: usecs*10)
+STAGING_AUDIO_DURATION (units: usecs*10)
+
+Also, silence pcm.c underrun errors.
+
+diff --git a/dlls/winealsa.drv/alsa.c b/dlls/winealsa.drv/alsa.c
+index 11111111111..11111111111 100644
+--- a/dlls/winealsa.drv/alsa.c
++++ b/dlls/winealsa.drv/alsa.c
+@@ -82,10 +82,10 @@ struct alsa_stream
+     pthread_mutex_t lock;
+ };
+ 
+-#define EXTRA_SAFE_RT 40000
++REFERENCE_TIME EXTRA_SAFE_RT = 40000;
+ 
+-static const REFERENCE_TIME def_period = 100000;
+-static const REFERENCE_TIME min_period = 50000;
++REFERENCE_TIME def_period = 1000;
++REFERENCE_TIME min_period = 500;
+ 
+ static const WCHAR drv_keyW[] = {'S','o','f','t','w','a','r','e','\\',
+     'W','i','n','e','\\','D','r','i','v','e','r','s','\\',
+@@ -810,6 +810,19 @@ static NTSTATUS alsa_create_stream(void *args)
+ 
+     params->result = S_OK;
+ 
++    const char* esrtenv = getenv("ALSA_EXTRA_PAD");
++
++    REFERENCE_TIME esrtval;
++
++    if (esrtenv) {
++        esrtval = atol(esrtenv);
++        if (esrtval >= 0) EXTRA_SAFE_RT = esrtval; // failsafe
++        MESSAGE("ALSA padding:\t%llu\n", EXTRA_SAFE_RT);
++    }
++    else {
++        TRACE("ALSA padding:\t%llu\t(default)\n", EXTRA_SAFE_RT);
++    }
++
+     stream = calloc(1, sizeof(*stream));
+     if(!stream){
+         params->result = E_OUTOFMEMORY;
+@@ -1008,10 +1021,10 @@ static NTSTATUS alsa_create_stream(void *args)
+ 
+     pthread_mutex_init(&stream->lock, NULL);
+ 
+-    TRACE("ALSA period: %lu frames\n", stream->alsa_period_frames);
+-    TRACE("ALSA buffer: %lu frames\n", stream->alsa_bufsize_frames);
+-    TRACE("MMDevice period: %u frames\n", stream->mmdev_period_frames);
+-    TRACE("MMDevice buffer: %u frames\n", stream->bufsize_frames);
++    MESSAGE("PIPEWIRE_ALSA period: %lu frames\n", stream->alsa_period_frames);
++    MESSAGE("PIPEWIRE_ALSA buffer: %lu frames\n", stream->alsa_bufsize_frames);
++    MESSAGE("MMDevAPI period: %u frames\n", stream->mmdev_period_frames);
++    MESSAGE("MMDevAPI buffer: %u frames\n", stream->bufsize_frames);
+ 
+ exit:
+     free(sw_params);
+@@ -1280,7 +1295,7 @@ static snd_pcm_sframes_t alsa_write_best_effort(struct alsa_stream *stream, BYTE
+         WARN("writei failed, recovering: %ld (%s)\n", written,
+                 snd_strerror(written));
+ 
+-        ret = snd_pcm_recover(stream->pcm_handle, written, 0);
++        ret = snd_pcm_recover(stream->pcm_handle, written, 1);
+         if(ret < 0){
+             WARN("Could not recover: %d (%s)\n", ret, snd_strerror(ret));
+             return ret;
+@@ -1454,7 +1469,7 @@ static void alsa_read_data(struct alsa_stream *stream)
+ 
+         WARN("read failed, recovering: %ld (%s)\n", nread, snd_strerror(nread));
+ 
+-        ret = snd_pcm_recover(stream->pcm_handle, nread, 0);
++        ret = snd_pcm_recover(stream->pcm_handle, nread, 1);
+         if(ret < 0){
+             WARN("Recover failed: %d (%s)\n", ret, snd_strerror(ret));
+             return;
+diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
+index 11111111111..11111111111 100644
+--- a/dlls/winepulse.drv/pulse.c
++++ b/dlls/winepulse.drv/pulse.c
+@@ -787,11 +787,12 @@ static void pulse_probe_settings(pa_mainloop *ml, pa_context *ctx, int render, c
+     if (length)
+         *def_period = *min_period = pa_bytes_to_usec(10 * length, &ss);
+ 
+-    if (*min_period < MinimumPeriod)
+-        *min_period = MinimumPeriod;
+-
+-    if (*def_period < DefaultPeriod)
+-        *def_period = DefaultPeriod;
++    const char* penv = getenv("STAGING_AUDIO_PERIOD");
++    int val;
++    if (penv && (val = atoi(penv)) >= 0) {
++        *def_period = *min_period = val;
++        TRACE("Pulse audio period set to %d.\n", val);
++    }
+ 
+     wfx->wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+     wfx->cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+@@ -1204,8 +1205,19 @@ static NTSTATUS pulse_create_stream(void *args)
+     if (FAILED(hr))
+         goto exit;
+ 
+-    if (duration < 3 * period)
+-        duration = 3 * period;
++    const char* penv = getenv("STAGING_AUDIO_PERIOD");
++    int periodval;
++    if ((stream->dataflow == eRender) && penv && (periodval = atoi(penv)) >= 0) {
++        params->period = period = periodval;
++        TRACE("Pulse audio period set to %d.\n", periodval);
++    }
++
++    const char* denv = getenv("STAGING_AUDIO_DURATION");
++    int durationval;
++    if ((stream->dataflow == eRender) && denv && (durationval = atoi(denv)) >= 0) {
++        params->duration = max(durationval, params->period);
++        TRACE("Pulse audio duration set to %d.\n", durationval);
++    } else params->duration = duration = 3 * period;
+ 
+     stream->def_period = period;
+ 
+diff --git a/dlls/mmdevapi/client.c b/dlls/mmdevapi/client.c
+index 11111111111..11111111111 100644
+--- a/dlls/mmdevapi/client.c
++++ b/dlls/mmdevapi/client.c
+@@ -52,6 +52,9 @@ extern struct audio_session_wrapper *session_wrapper_create(struct audio_client
+ 
+ static HANDLE main_loop_thread;
+ 
++static BOOL custom;
++static REFERENCE_TIME num_periods = 3;
++
+ void main_loop_stop(void)
+ {
+     if (main_loop_thread) {
+@@ -501,6 +504,25 @@ static HRESULT WINAPI client_Initialize(IAudioClient3 *iface, AUDCLNT_SHAREMODE
+     if (mode != AUDCLNT_SHAREMODE_SHARED && mode != AUDCLNT_SHAREMODE_EXCLUSIVE)
+         return E_INVALIDARG;
+ 
++    if (mode == AUDCLNT_SHAREMODE_SHARED) {
++        const char* penv = getenv("STAGING_AUDIO_PERIOD");
++        const char* denv = getenv("STAGING_AUDIO_DURATION");
++        int periodval, durationval;
++
++        if (penv && ((periodval = atoi(penv)) >= 0)) {
++            custom = TRUE;
++            period = periodval;
++
++            /* only set duration if period is given (backwards compatibility?) */
++            if (denv && ((durationval = atoi(denv)) >= 0)) {
++                duration = max(durationval, periodval);
++            }
++            else {
++                duration = num_periods * periodval;
++            }
++        }
++    }
++
+     if (flags & ~(AUDCLNT_STREAMFLAGS_CROSSPROCESS |
+                   AUDCLNT_STREAMFLAGS_LOOPBACK |
+                   AUDCLNT_STREAMFLAGS_EVENTCALLBACK |

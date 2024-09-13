@@ -1,0 +1,95 @@
+--- a/proton
++++ b/proton
+@@ -1595,6 +1595,18 @@ class Session:
+                     "1549250",  # Undecember
+                 ]:
+             argv = [g_proton.wine_bin, "c:\\Program Files (x86)\\Steam\\steam.exe"]
++        # Don't use steam if it's not a steam game
++        # Prevent this warning for non-steam games:
++        # [S_API FAIL] SteamAPI_Init() failed; no appID found.
++        # Either launch the game from Steam, or put the file steam_appid.txt containing the correct appID in your game folder.
++        elif "UMU_ID" in os.environ:
++            log(sys.argv[2])
++            if len(sys.argv) >=  3 and sys.argv[2].startswith('/'):
++                log("Executable a unix path, launching with /unix option.")
++                argv = [g_proton.wine64_bin, "start", "/unix"]
++            else:
++                log("Executable is inside wine prefix, launching normally.")
++                argv = [g_proton.wine64_bin]
+         else:
+             argv = [g_proton.wine64_bin, "c:\\windows\\system32\\steam.exe"]
+ 
+@@ -1612,12 +1624,14 @@ class Session:
+         return rc
+ 
+ if __name__ == "__main__":
+-    if "STEAM_COMPAT_DATA_PATH" not in os.environ:
++    if not "STEAM_COMPAT_DATA_PATH" in os.environ:
+         log("No compat data path?")
+         sys.exit(1)
+ 
+     g_proton = Proton(os.path.dirname(sys.argv[0]))
+ 
++    g_proton.cleanup_legacy_dist()
++    g_proton.do_steampipe_fixups()
+ 
+     g_compatdata = CompatData(os.environ["STEAM_COMPAT_DATA_PATH"])
+ 
+@@ -1625,12 +1639,34 @@ if __name__ == "__main__":
+ 
+     g_session.init_wine()
+ 
++    # This is needed for protonfixes
++    os.environ["PROTON_DLL_COPY"] = "*"
++
+     if g_proton.missing_default_prefix():
+-        log("Default prefix is missing, something is very wrong.")
+-        sys.exit(1)
++        g_proton.make_default_prefix()
+ 
+     g_session.init_session(sys.argv[1] != "runinprefix")
+ 
++    # Allow umu clients to run winetricks verbs and be the frontend for them
++    if (
++        g_session.env.get("UMU_ID")
++        and g_session.env.get("EXE", "").endswith("winetricks")
++        and g_session.env.get("PROTON_VERB") == "waitforexitandrun"
++    ):
++        wt_verbs = " ".join(sys.argv[2:][2:])
++        g_session.env["WINE"] = g_proton.wine_bin
++        g_session.env["WINELOADER"] = g_proton.wine_bin
++        g_session.env["WINESERVER"] = g_proton.wineserver_bin
++        g_session.env["WINETRICKS_LATEST_VERSION_CHECK"] = "disabled"
++        g_session.env["LD_PRELOAD"] = ""
++
++        log(f"Running winetricks verbs in prefix: {wt_verbs}")
++        rc = subprocess.run(sys.argv[2:], check=False, env=g_session.env).returncode
++
++        sys.exit(rc)
++
++    import protonfixes
++
+     #determine mode
+     rc = 0
+     if sys.argv[1] == "run":
+@@ -1641,20 +1677,8 @@ if __name__ == "__main__":
+     elif sys.argv[1] == "waitforexitandrun":
+         #wait for wineserver to shut down
+         g_session.run_proc([g_proton.wineserver_bin, "-w"])
+-        winedrv = "x11"
+-        if os.environ.get("PROTON_ENABLE_WAYLAND", False) and os.environ["PROTON_ENABLE_WAYLAND"] == "1":
+-            del os.environ["DISPLAY"]
+-            winedrv = "wayland"
+-        g_session.run_proc(
+-            [g_proton.wine_bin, "reg.exe", "add", "HKCU\\Software\\Wine\\Drivers", "/v", "Graphics", "/d", f"{winedrv}", "/f"]
+-        )
+-        g_session.run_proc([g_proton.wineserver_bin, "-w"])
+         #then run
+         rc = g_session.run()
+-        g_session.run_proc(
+-            [g_proton.wine_bin, "reg.exe", "add", "HKCU\\Software\\Wine\\Drivers", "/v", "Graphics", "/d", "x11", "/f"]
+-        )
+-        g_session.run_proc([g_proton.wineserver_bin, "-w"])
+     elif sys.argv[1] == "runinprefix":
+         rc = g_session.run_proc([g_proton.wine_bin] + sys.argv[2:])
+     elif sys.argv[1] == "destroyprefix":
