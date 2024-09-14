@@ -42,3 +42,17 @@ index 367b720..eb2c792 100644
  
  ##
  ## make module=$dllname module[32,64]
+diff --git a/Makefile.in b/Makefile.in
+index 16405fc..0c0818c 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -558,7 +558,8 @@ $(OBJ)/.build-protonfixes:
+ 
+ $(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
+ 	cd $(SRCDIR)/protonfixes && make install
+-	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
++	rm -rf $(PROTONFIXES_TARGET)
++	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
+ 	rm -r $(SRCDIR)/protonfixes/dist
+ 
+ all-dist: $(PROTONFIXES_TARGET)
