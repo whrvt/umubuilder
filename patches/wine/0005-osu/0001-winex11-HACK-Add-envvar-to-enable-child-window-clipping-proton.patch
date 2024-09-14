@@ -1,0 +1,64 @@
+diff --git a/dlls/winex11.drv/opengl.c b/dlls/winex11.drv/opengl.c
+index 11111111111..11111111111 100644
+--- a/dlls/winex11.drv/opengl.c
++++ b/dlls/winex11.drv/opengl.c
+@@ -1525,6 +1525,10 @@ static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel
+ 
+     gl->layered_type = get_gl_layered_type( hwnd );
+ 
++    static unsigned int cache;
++    if (!cache++ && gl_disable_child_window_clipping)
++        MESSAGE("OpenGL speedhack enabled, which will cause the editor top menu bar to render incorrectly\n\texport WINE_DISABLE_GLCHILD_HACK=1 to disable.\n");
++    known_child = known_child && !gl_disable_child_window_clipping;
+     if (!gl->layered_type && !drawable_needs_clipping( hwnd, known_child ))  /* childless top-level window */
+     {
+         struct x11drv_win_data *data;
+@@ -1692,7 +1696,10 @@ void sync_gl_drawable( HWND hwnd, BOOL known_child )
+     if (!(old = get_gl_drawable( hwnd, 0 ))) return;
+ 
+     new_layered_type = get_gl_layered_type( hwnd );
+-
++    if (gl_disable_child_window_clipping && !old->layered_type) {
++        release_gl_drawable( old );
++        return;
++    }
+     known_child = drawable_needs_clipping( hwnd, known_child );
+     if (old->layered_type || (known_child && old->type == DC_GL_WINDOW)
+         || (!known_child && old->type != DC_GL_WINDOW)
+diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
+index 11111111111..11111111111 100644
+--- a/dlls/winex11.drv/x11drv_main.c
++++ b/dlls/winex11.drv/x11drv_main.c
+@@ -89,6 +89,7 @@ BOOL shape_layered_windows = TRUE;
+ int copy_default_colors = 128;
+ int alloc_system_colors = 256;
+ int limit_number_of_resolutions = 0;
++BOOL gl_disable_child_window_clipping = FALSE;
+ int xrender_error_base = 0;
+ int xfixes_event_base = 0;
+ char *process_name = NULL;
+@@ -937,6 +938,12 @@ static NTSTATUS x11drv_init( void *arg )
+             (e && *e != '\0' && *e != '0');
+     }
+ 
++    {
++        const char *e = getenv("WINE_ENABLE_GLCHILD_HACK");
++        if (e && *e != '\0' && *e != '0')
++            gl_disable_child_window_clipping = TRUE;
++    }
++
+     init_user_driver();
+     X11DRV_DisplayDevices_Init(FALSE);
+ 
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 11111111111..11111111111 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -1020,6 +1020,7 @@ static inline UINT asciiz_to_unicode( WCHAR *dst, const char *src )
+     while ((*p++ = *src++));
+     return (p - dst) * sizeof(WCHAR);
+ }
++extern BOOL gl_disable_child_window_clipping;
+ 
+ extern BOOL layered_window_client_hack;
+ 
