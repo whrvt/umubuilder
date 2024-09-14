@@ -1,6 +1,7 @@
 #!/bin/bash
 pkgrel=9-1
 pkgname="proton-osu-${pkgrel}"
+buildname="proton-osu"
 protonurl=https://github.com/CachyOS/proton-cachyos.git
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
 gittag=cachyos-9.0-20240905
@@ -142,7 +143,7 @@ _build() {
         --container-engine="docker" \
         --proton-sdk-image="${protonsdk}" \
         --enable-ccache \
-        --build-name="${pkgname}" || _failure "Configuring proton failed."
+        --build-name="${buildname}" || _failure "Configuring proton failed."
 
     if [[ "${*}" =~ "cleanbuild" ]]; then 
         _message "Cleaning build directory."
@@ -151,7 +152,8 @@ _build() {
 
     if ! [[ "${*}" =~ "wineonly" ]]; then
         make -j1 redist &&
-        mv "${builddir}/${pkgname}".tar.xz "${scriptdir}" &&
+        mv "${builddir}/${buildname}".tar.xz "${scriptdir}/${pkgname}.tar.xz" &&
+        cp "${builddir}/${buildname}".sha512sum "${scriptdir}/${pkgname}.sha512sum" &&
         _message "${builddir}/${pkgname}.tar.xz is now ready in the current directory"
     else
         make wineonly # not sure why this isn't working
