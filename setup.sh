@@ -1,5 +1,5 @@
 #!/bin/bash
-pkgrel=9-1
+pkgrel=9-3
 pkgname="proton-osu-${pkgrel}"
 buildname="proton-osu"
 protonurl=https://github.com/CachyOS/proton-cachyos.git
