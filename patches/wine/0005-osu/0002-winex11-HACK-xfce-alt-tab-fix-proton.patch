@@ -1,0 +1,63 @@
+diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
+index 98723a302ed..d4211571d9d 100644
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -169,6 +169,8 @@ static int detect_wm(Display *dpy)
+                         cached = WINE_WM_X11_STEAMCOMPMGR;
+                     else if(strcmp(wm_name, "KWin") == 0)
+                         cached = WINE_WM_X11_KDE;
++                    else if(strcmp(wm_name, "Xfwm4") == 0)
++                        cached = WINE_WM_X11_XFCE;
+                     else
+                         cached = WINE_WM_UNKNOWN;
+ 
+@@ -210,6 +212,11 @@ BOOL wm_is_steamcompmgr(Display *display)
+     return detect_wm(display) == WINE_WM_X11_STEAMCOMPMGR;
+ }
+ 
++BOOL wm_is_xfce(Display *display)
++{
++    return detect_wm(display) == WINE_WM_X11_XFCE;
++}
++
+ /***********************************************************************
+  * http://standards.freedesktop.org/startup-notification-spec
+  */
+@@ -1339,7 +1346,15 @@ void update_net_wm_states( struct x11drv_win_data *data )
+         new_state |= (1 << NET_WM_STATE_MAXIMIZED);
+ 
+     ex_style = NtUserGetWindowLongW( data->hwnd, GWL_EXSTYLE );
+-    if ((ex_style & WS_EX_TOPMOST) &&
++
++    /* osu! hack: use upstream Wine behavior if WM is XFCE (fixes panel staying over the game when tabbing)*/
++    if (wm_is_xfce(data->display))
++    {
++        if (ex_style & WS_EX_TOPMOST)
++            new_state |= (1 << NET_WM_STATE_ABOVE);
++    }
++    else {
++        if ((ex_style & WS_EX_TOPMOST) &&
+         /* This workaround was initially targetting some mutter and KDE issues, but
+          * removing it causes failure to focus out from exclusive fullscreen windows.
+          *
+@@ -1349,6 +1364,8 @@ void update_net_wm_states( struct x11drv_win_data *data )
+          */
+         !(new_state & (1 << NET_WM_STATE_FULLSCREEN)))
+         new_state |= (1 << NET_WM_STATE_ABOVE);
++    }
++    
+     if (!data->add_taskbar)
+     {
+         if (data->skip_taskbar || (ex_style & WS_EX_NOACTIVATE)
+diff --git a/include/ntuser.h b/include/ntuser.h
+index bf65f214bc2..f6b0a98bffa 100644
+--- a/include/ntuser.h
++++ b/include/ntuser.h
+@@ -1430,6 +1430,7 @@ W32KAPI BOOL WINAPI __wine_send_input( HWND hwnd, const INPUT *input, const RAWI
+ #define WINE_WM_X11_MUTTER       1
+ #define WINE_WM_X11_STEAMCOMPMGR 2
+ #define WINE_WM_X11_KDE          3
++#define WINE_WM_X11_XFCE         4
+ 
+ static inline LONG_PTR __wine_get_window_manager(void)
+ {
