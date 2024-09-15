@@ -1,10 +1,11 @@
 #!/bin/bash
-pkgrel=9-3
-pkgname="proton-osu-${pkgrel}"
+pkgver=9-3
 buildname="proton-osu"
+pkgname="${buildname}-${pkgver}"
+
 protonurl=https://github.com/CachyOS/proton-cachyos.git
+protontag=cachyos-9.0-20240905
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
-gittag=cachyos-9.0-20240905
 
 ##############################################
 # Do everything
@@ -36,7 +37,7 @@ _run_all() {
     exit 0
 }
 ##############################################
-# Help message
+# Prepare for a full build
 ##############################################
 _prepare() {
     { _dirsetup &&
@@ -50,7 +51,7 @@ _prepare() {
 ##############################################
 _sources() {
     if ! { [ -d "${srcdir}" ] && [ -f "${srcdir}"/Makefile ] ; }; then
-        git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${gittag}" || _failure "Couldn't clone your chosen repo at the tag."
+        git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${protontag}" || _failure "Couldn't clone your chosen repo at the tag."
     fi
 
     rm -rf "${srcdir}"/protonfixes
@@ -201,9 +202,10 @@ _failure() {
     exit 1
 }
 _help() {
-    _message "./setup.sh [help] [build] [install]"
+    _message "./setup.sh [help] [build] (cleanbuild) [install]"
     _message "No arguments grabs sources, patches, builds, and installs"
-    _exit 0
+    _message "Adding cleanbuild just runs \"make clean\" in the build directory before \"make\""
+    exit 0
 }
 ##############################################
 # Main
