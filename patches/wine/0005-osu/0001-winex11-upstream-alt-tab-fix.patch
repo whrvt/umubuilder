@@ -1,0 +1,97 @@
+## Fixes alt-tab with both windowed/fullscreen on osu! with Proton
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index 2dcc3e20d3e..2aed9232232 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -4288,7 +4288,7 @@ static BOOL show_window( HWND hwnd, INT cmd )
+     WND *win;
+     HWND parent;
+     DPI_AWARENESS_CONTEXT context;
+-    LONG style = get_window_long( hwnd, GWL_STYLE );
++    LONG style = get_window_long( hwnd, GWL_STYLE ), new_style;
+     BOOL was_visible = (style & WS_VISIBLE) != 0;
+     BOOL show_flag = TRUE;
+     RECT newPos = {0, 0, 0, 0};
+@@ -4391,6 +4391,15 @@ static BOOL show_window( HWND hwnd, INT cmd )
+         NtUserSetWindowPos( hwnd, HWND_TOP, newPos.left, newPos.top,
+                             newPos.right - newPos.left, newPos.bottom - newPos.top, swp );
+ 
++    new_style = get_window_long( hwnd, GWL_STYLE );
++    if (((style ^ new_style) & WS_MINIMIZE) != 0)
++    {
++        if ((new_style & WS_MINIMIZE) != 0)
++            NtUserNotifyWinEvent( EVENT_SYSTEM_MINIMIZESTART, hwnd, OBJID_WINDOW, 0 );
++        else
++            NtUserNotifyWinEvent( EVENT_SYSTEM_MINIMIZEEND, hwnd, OBJID_WINDOW, 0 );
++    }
++
+     if (cmd == SW_HIDE)
+     {
+         HWND hFocus;
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index 48903cd5623..199b601d005 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -991,24 +991,9 @@ static BOOL X11DRV_Expose( HWND hwnd, XEvent *xev )
+     rect.right  = pos.x + event->width;
+     rect.bottom = pos.y + event->height;
+ 
+-    if (layered_window_client_hack && event->window == data->client_window)
+-        OffsetRect( &rect, data->client_rect.left - data->whole_rect.left,
+-                    data->client_rect.top - data->whole_rect.top );
+-    if (layered_window_client_hack || event->window != data->client_window)
+-    {
+-        if (data->surface)
+-        {
+-            surface_region = expose_surface( data->surface, &rect );
+-            if (!surface_region) flags = 0;
+-            else NtGdiOffsetRgn( surface_region, data->whole_rect.left - data->client_rect.left,
+-                                 data->whole_rect.top - data->client_rect.top );
+-
+-            if (data->vis.visualid != default_visual.visualid)
+-                data->surface->funcs->flush( data->surface );
+-        }
++    if (event->window != data->client_window)
+         OffsetRect( &rect, data->whole_rect.left - data->client_rect.left,
+                     data->whole_rect.top - data->client_rect.top );
+-    }
+ 
+     if (event->window != root_window)
+     {
+diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
+index 98723a302ed..ab68807f8f9 100644
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -1325,15 +1325,7 @@ void update_net_wm_states( struct x11drv_win_data *data )
+         if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION)
+             new_state |= (1 << NET_WM_STATE_MAXIMIZED);
+         else if (!(style & WS_MINIMIZE))
+-        {
+-            if (!wm_is_steamcompmgr( data->display ) || !fs_hack_enabled( monitor ))
+-            {
+-                /* when fs hack is enabled, we don't want steamcompmgr to resize the window to be fullscreened */
+-                if (is_window_rect_full_virtual_screen( &data->whole_rect ))
+-                    net_wm_bypass_compositor = 1;
+-                new_state |= (1 << NET_WM_STATE_FULLSCREEN);
+-            }
+-        }
++            new_state |= (1 << NET_WM_STATE_FULLSCREEN);
+     }
+     else if (style & WS_MAXIMIZE)
+         new_state |= (1 << NET_WM_STATE_MAXIMIZED);
+@@ -3764,7 +3756,6 @@ static void handle_window_desktop_resize( struct x11drv_win_data *data, UINT old
+     }
+ 
+     /* update the full screen state */
+-    update_net_wm_states( data );
+ 
+     if (data->whole_window)
+     {
+@@ -3807,6 +3798,7 @@ LRESULT X11DRV_WindowMessage( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+     case WM_X11DRV_DESKTOP_RESIZED:
+         if ((data = get_win_data( hwnd )))
+         {
++            update_net_wm_states( data );
+             handle_window_desktop_resize( data, wp, lp );
+             release_win_data( data );
+         }
