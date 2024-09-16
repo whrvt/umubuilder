@@ -6,6 +6,7 @@ pkgname="${buildname}-${pkgver}"
 protonurl=https://github.com/CachyOS/proton-cachyos.git
 protontag=cachyos-9.0-20240905
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
+protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 ##############################################
 # Do everything
@@ -94,14 +95,12 @@ _envsetup() {
     fi
     export PATH="${_cross_path}"
 
-    export protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
-
     # For wineprefix setup during build
     export WINEESYNC=0
     export WINEFSYNC=0
     unset DISPLAY
 
-    CPUs="$(nproc)"
+    CPUs="$(nproc)" && export CPUs
     export MAKEFLAGS="-j$CPUs"
     export NINJAFLAGS="-j$CPUs"
     export SUBJOBS="$CPUs"
