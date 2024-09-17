@@ -11,7 +11,7 @@ protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 ##############################################
 # Do everything
 ##############################################
-_run_all() {
+_main() {
     if [[ "${*}" =~ .*help.* ]]; then
         _help
     fi
@@ -56,6 +56,7 @@ _sources() {
         git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${protontag}" || _failure "Couldn't clone your chosen repo at the tag."
     fi
 
+    # Keep protonfixes up-to-date, since we don't pin it to a specific version 
     rm -rf "${srcdir}"/protonfixes
 
     if ! { [ -d "${scriptdir}"/protonfixes ] && [ -f "${scriptdir}"/protonfixes/Makefile ] ; }; then
@@ -87,15 +88,6 @@ _dirsetup() {
 # Env
 ##############################################
 _envsetup() {
-    # Try to sanitize my own PATH
-    if [[ "${PATH}" =~ "llvm-mingw" ]]; then
-        _mingw_path="$(dirname "$(command -v i686-w64-mingw32-clang)")"
-        _cross_path="${PATH//"${_mingw_path}":/}"
-    else
-        _cross_path="${PATH}"
-    fi
-    export PATH="${_cross_path}"
-
     # For wineprefix setup during build
     export WINEESYNC=0
     export WINEFSYNC=0
@@ -112,7 +104,7 @@ _envsetup() {
 _patch() {
     cd "${srcdir}" || _failure "No source dir!"
 
-    if [ -z "${*}" ]; then _failure "The _patch function needs (a) patch subdirector(y/ies)."; fi
+    if [ -z "${*}" ]; then _failure "There were no directories specified to _patch."; fi
 
     for subdir in "${@}"; do
         # "hack" to support patches that are rooted in wine
@@ -168,20 +160,6 @@ _install() {
 
     make install || _failure "make install didn't succeed"
 
-    ## TODO: fix this
-    ## Dirty hack copied from proton-cachyos pkg (I don't know either...)
-    #########
-    # For some unknown to me reason, 32bit vkd3d (not vkd3d-proton) always links
-    # to libgcc_s_dw2-1.dll no matter what linker options I tried.
-    # Copy the required dlls into the package, they will be copied later into the prefix
-    # by the patched proton script. Bundle them to not depend on mingw-w64-gcc being installed.
-
-    # { cp /usr/i686-w64-mingw32/bin/{libgcc_s_dw2-1.dll,libwinpthread-1.dll} \
-    #     "${installdir}"/files/lib/vkd3d/ &&
-    #   cp /usr/x86_64-w64-mingw32/bin/{libgcc_s_seh-1.dll,libwinpthread-1.dll} \
-    #     "${installdir}"/files/lib64/vkd3d/ ; } ||
-    #   _failure "Couldn't copy mingw files from /usr/{i686,x86_64}-w64-mingw/bin files to the install directory, you should install mingw-gcc."
-    
     _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${pkgname}"
     _message "Along with the archive in the current directory"
 }
@@ -190,8 +168,7 @@ _install() {
 ##############################################
 _message() {
     if [ -n "$*" ]; then
-        echo ""
-        echo -e '\033[1;34m'"Notice:\033[0m $*"
+        echo -e '\033[1;34m'"Message:\033[0m $*"
     else
         echo ""
     fi
@@ -202,14 +179,14 @@ _failure() {
     exit 1
 }
 _help() {
-    _message "./setup.sh [help] [reclone] [build] (cleanbuild) [install]"
+    _message "./setup.sh [help] [reclone] [build (cleanbuild)] [install]"
     _message "No arguments grabs sources, patches, builds, and installs"
-    _message "Adding cleanbuild just runs \"make clean\" in the build directory before \"make\""
-    _message "Reclone redownloads sources"
+    _message "Adding 'cleanbuild' just runs 'make clean' in the build directory before 'make'"
+    _message "'reclone' redownloads sources, use this if your sources are outdated"
     exit 0
 }
 ##############################################
-# Main
+# Run main function
 ##############################################
 
-_run_all "$@"
+_main "$@"
