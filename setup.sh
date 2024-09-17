@@ -1,10 +1,10 @@
 #!/bin/bash
-pkgver=9-3
+pkgver=9-4
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20240905
+protontag=cachyos_9.0_20240917
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
@@ -19,12 +19,12 @@ _run_all() {
     if     [[ "${*}" =~ ^build ]] && [[ "${*}" =~ "install" ]] ||
        ! { [[ "${*}" =~ ^build ]] || [[ "${*}" =~ "install" ]] ; }; then
         _message "Fully building and installing."
-        _prepare
+        _prepare "$@"
         _build "$@" &&
         _install
     elif [[ "${*}" =~ ^build ]]; then
         _message "Only building."
-        _prepare
+        _prepare "$@"
         _build "$@" || _failure "Build failed."
     elif [[ "${*}" =~ "install" ]]; then
         _message "Only installing."
@@ -43,7 +43,7 @@ _run_all() {
 _prepare() {
     { _dirsetup &&
       _envsetup &&
-      _sources &&
+      _sources "$@" &&
       _patch proton wine ; } ||
     _failure "Failed preparing build."
 }
@@ -51,6 +51,7 @@ _prepare() {
 # Download sources
 ##############################################
 _sources() {
+    if [[ "${*}" =~ "reclone" ]]; then rm -rf "${srcdir}"; fi
     if ! { [ -d "${srcdir}" ] && [ -f "${srcdir}"/Makefile ] ; }; then
         git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${protontag}" || _failure "Couldn't clone your chosen repo at the tag."
     fi
@@ -201,9 +202,10 @@ _failure() {
     exit 1
 }
 _help() {
-    _message "./setup.sh [help] [build] (cleanbuild) [install]"
+    _message "./setup.sh [help] [reclone] [build] (cleanbuild) [install]"
     _message "No arguments grabs sources, patches, builds, and installs"
     _message "Adding cleanbuild just runs \"make clean\" in the build directory before \"make\""
+    _message "Reclone redownloads sources"
     exit 0
 }
 ##############################################

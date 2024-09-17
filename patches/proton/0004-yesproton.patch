@@ -415,13 +415,13 @@ index 0adb029f..367b7203 100644
  
      def path(self, d):
          return self.base_dir + d
---- b/toolmanifest_runtime.vdf
-+++ a/toolmanifest_runtime.vdf
-@@ -2,4 +2,7 @@
- {
-   "version" "2"
-   "commandline" "/proton %verb%"
-+  "require_tool_appid" "1628350"
-+  "use_sessions" "1"
-+  "compatmanager_layer_name" "proton"
- }
+#--- b/toolmanifest_runtime.vdf
+#+++ a/toolmanifest_runtime.vdf
+#@@ -2,4 +2,7 @@
+# {
+#   "version" "2"
+#   "commandline" "/proton %verb%"
+#+  "require_tool_appid" "1628350"
+#+  "use_sessions" "1"
+#+  "compatmanager_layer_name" "proton"
+# }
