@@ -16,6 +16,6 @@ index fe870e2..c001a16 100644
  	cp -a $(PROTONFIXES_TARGET)/libmspack.so.0 $(REDIST_DIR)/files/lib64/
  	cp $(PROTONFIXES_TARGET)/libmspack.so.0.1.0 $(REDIST_DIR)/files/lib64/
 -	mv $(REDIST_DIR) $(BUILD_NAME)
- 	XZ_OPT="-9 -T0" tar -Jcf $(BUILD_NAME).tar.xz --numeric-owner --owner=0 --group=0 --null $(BUILD_NAME)
- 	sha512sum $(BUILD_NAME).tar.xz > $(BUILD_NAME).sha512sum
- 	@echo "Proton build available at $(BUILD_NAME).tar.xz"
+ ##	XZ_OPT="-9 -T0" tar -Jcf $(BUILD_NAME).tar.xz --numeric-owner --owner=0 --group=0 --null $(BUILD_NAME)
+ ##	sha512sum $(BUILD_NAME).tar.xz > $(BUILD_NAME).sha512sum
+ ##	@echo "Proton build available at $(BUILD_NAME).tar.xz"

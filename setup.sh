@@ -5,66 +5,100 @@ pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
 protontag=cachyos_9.0_20240917
-umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
+
+umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
+umu_launcherurl=https://github.com/Open-Wine-Components/umu-launcher.git
 
 ##############################################
 # Do everything
 ##############################################
 _main() {
-    if [[ "${*}" =~ .*help.* ]]; then
-        _help
+    { _dirsetup && _envsetup ; } || _failure "Failed preparing script environment."
+
+    if [ "${_do_build}" = "true" ]; then {
+        _sources &&
+        _patch proton wine &&
+        _build
+        } || _failure "Build failed."
     fi
 
-    if     [[ "${*}" =~ ^build ]] && [[ "${*}" =~ "install" ]] ||
-       ! { [[ "${*}" =~ ^build ]] || [[ "${*}" =~ "install" ]] ; }; then
-        _message "Fully building and installing."
-        _prepare "$@"
-        _build "$@" &&
-        _install
-    elif [[ "${*}" =~ ^build ]]; then
-        _message "Only building."
-        _prepare "$@"
-        _build "$@" || _failure "Build failed."
-    elif [[ "${*}" =~ "install" ]]; then
-        _message "Only installing."
-        _dirsetup
-        _envsetup
+    if [ "${_do_install}" = "true" ]; then
         _install || _failure "Install failed."
-    else
-        _message "Invalid arguments."
-        _help
     fi
+
+    _message "Script finished."
     exit 0
 }
 ##############################################
-# Prepare for a full build
+# Parse arguments (badly, PRs welcome :^) )
 ##############################################
-_prepare() {
-    { _dirsetup &&
-      _envsetup &&
-      _sources "$@" &&
-      _patch proton wine ; } ||
-    _failure "Failed preparing build."
+_parse_args() {
+    # will exit early here if help specified
+    if [[ "${*}" =~ .*help.* ]]; then _help; fi
+
+    # messed up way to build&install if either "build install" is specified or neither are specified
+    if     [[ "${*}" =~ ^build ]] && [[ "${*}" =~ "install" ]] ||
+       ! { [[ "${*}" =~ ^build ]] || [[ "${*}" =~ "install" ]] ; }; then
+        _do_build=true
+        _do_install=true
+        _message "Will build Proton and also install it to the Steam compatibility tools directory."
+    elif [[ "${*}" =~ ^build ]]; then
+        _do_build=true
+        _message "Will only be building Proton without installing it."
+    elif [[ "${*}" =~ "install" ]]; then
+        _do_install=true
+        _message "Will only install the already built files to the Steam compatibility tools directory."
+        return
+    fi
+
+    if [[ "${*}" =~ "reclone" ]]; then
+        _do_reclone=true
+        _message "Will reclone sources before bulding."
+    fi
+    if [[ "${*}" =~ "no-bundle-umu" ]]; then
+        _do_bundle_umu=false
+        _message "Won't bundle umu-run with Proton."
+    else
+        _do_bundle_umu=true
+        _message "Will bundle umu-run with Proton."
+    fi
+    if [[ "${*}" =~ "cleanbuild" ]]; then
+        _do_cleanbuild=true
+        _message "Will run 'make clean' before building."
+    fi
+    if [[ "${*}" =~ "wineonly" ]]; then
+        _do_build_wine_only=true
+        _message "Will only build wine without the rest of Proton's sources (BROKEN)"
+    fi
 }
 ##############################################
 # Download sources
 ##############################################
 _sources() {
-    if [[ "${*}" =~ "reclone" ]]; then rm -rf "${srcdir}"; fi
+    if [ "${_do_reclone}" = "true" ]; then rm -rf "${srcdir}"; fi
+
     if ! { [ -d "${srcdir}" ] && [ -f "${srcdir}"/Makefile ] ; }; then
-        git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${protontag}" || _failure "Couldn't clone your chosen repo at the tag."
+        git clone --depth 1 --recurse-submodules --shallow-submodules "${protonurl}" "${srcdir}" -b "${protontag}" ||
+            _failure "Couldn't clone your chosen Proton repo at the tag."
     fi
+
+    git -C "${srcdir}" reset --hard --recurse-submodules HEAD ||
+        _failure "Couldn't reset the Proton sources to their original state."
 
     # Keep protonfixes up-to-date, since we don't pin it to a specific version 
-    rm -rf "${srcdir}"/protonfixes
+    rm -rf "${srcdir}"/protonfixes "${scriptdir}"/protonfixes
+    git clone --depth 1 --recurse-submodules --shallow-submodules "${umu_protonfixesurl}" "${scriptdir}"/protonfixes ||
+        _failure "Couldn't add the required umu-protonfixes repo."
+    cp -r "${scriptdir}"/protonfixes "${srcdir}"/protonfixes
 
-    if ! { [ -d "${scriptdir}"/protonfixes ] && [ -f "${scriptdir}"/protonfixes/Makefile ] ; }; then
-        git clone --depth 1 --recurse-submodules --shallow-submodules "${umu_protonfixesurl}" "${scriptdir}"/protonfixes || _failure "Couldn't add the required umu-protonfixes repo."
+    if [ "${_do_bundle_umu}" = "true" ]; then
+        # Same with umu-launcher, if we want that
+        rm -rf "${scriptdir}"/umu-launcher
+        git clone --depth 1 --recurse-submodules --shallow-submodules "${umu_launcherurl}" "${scriptdir}"/umu-launcher ||
+            _failure "Couldn't add the umu-launcher repo you wanted."
     fi
 
-    for tree in "${srcdir}" "${scriptdir}"/protonfixes; do cd "${tree}" && git reset --hard --recurse-submodules HEAD; done
-    cp -r "${scriptdir}"/protonfixes "${srcdir}"/protonfixes
     cd "${scriptdir}"
     _message "Sources are ready."
 }
@@ -121,6 +155,7 @@ _patch() {
             patch -Np1 <"${patch}" || _failure "Couldn't apply ${shortname}"
         done
     done
+
     cd "${srcdir}"
 
     # Hardcode #CPUs in files to speed up compilation and avoid strange substitution problems
@@ -132,25 +167,32 @@ _patch() {
 _build() {
     cd "${builddir}" || _failure "Can't build because there is no build directory."
 
-    "${srcdir}"/configure.sh \
-        --container-engine="docker" \
-        --proton-sdk-image="${protonsdk}" \
-        --enable-ccache \
-        --build-name="${buildname}" || _failure "Configuring proton failed."
+    _arglist=(
+        --container-engine="docker"
+        --proton-sdk-image="${protonsdk}"
+        --build-name="${buildname}"
+        --enable-ccache
+    )
 
-    if [[ "${*}" =~ "cleanbuild" ]]; then 
+    "${srcdir}"/configure.sh "${_arglist[@]}" || _failure "Configuring proton failed."
+
+    if [ "${_do_cleanbuild}" = "true" ]; then 
         _message "Cleaning build directory."
         make clean
     fi
 
-    if ! [[ "${*}" =~ "wineonly" ]]; then
-        make -j1 redist &&
-        mv "${builddir}/${buildname}".tar.xz "${scriptdir}/${pkgname}.tar.xz" &&
-        cp "${builddir}/${buildname}".sha512sum "${scriptdir}/${pkgname}.sha512sum" &&
-        _message "${builddir}/${pkgname}.tar.xz is now ready in the current directory"
-    else
-        make wineonly # not sure why this isn't working
-    fi
+    make -j1 redist &&
+    if [ "${_do_bundle_umu}" = "true" ]; then 
+        cd "${scriptdir}"/umu-launcher && ./configure.sh --user-install && mkdir pkg && make DESTDIR=pkg install && cd "${builddir}"
+        rm -rf "${buildname}"/umu-run
+        shopt -s globstar
+    	cp -a "${scriptdir}"/umu-launcher/pkg/**/.local/bin/umu-run "${buildname}"/umu-run
+        shopt -u globstar
+    fi &&
+    _message "Creating archive: ${pkgname}.tar.xz" &&
+    XZ_OPT="-9 -T0" tar -Jcf "${scriptdir}"/"${pkgname}".tar.xz --numeric-owner --owner=0 --group=0 --null "${buildname}" &&
+    sha512sum "${scriptdir}"/"${pkgname}".tar.xz > "${scriptdir}"/"${pkgname}".sha512sum &&
+    _message "${pkgname}.tar.xz is now ready in the current directory"
 }
 ##############################################
 # Install
@@ -160,7 +202,7 @@ _install() {
 
     make install || _failure "make install didn't succeed"
 
-    _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${pkgname}"
+    _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${buildname}"
     _message "Along with the archive in the current directory"
 }
 ##############################################
@@ -175,18 +217,23 @@ _message() {
 }
 _failure() {
     if [ -n "$*" ]; then echo -e '\033[1;31m'"Error:\033[0m $*"; fi
-    echo -e '\033[1;31m'"Exiting.\033[0m"
+    echo -e '\033[1;31m'"Exiting.\033[0m Run './setup.sh help' to see some available options."
     exit 1
 }
 _help() {
-    _message "./setup.sh [help] [reclone] [build (cleanbuild)] [install]"
+    _message "./setup.sh [help] [reclone] [build (cleanbuild)] [bundle-umu] [install]"
+    echo ""
     _message "No arguments grabs sources, patches, builds, and installs"
-    _message "Adding 'cleanbuild' just runs 'make clean' in the build directory before 'make'"
-    _message "'reclone' redownloads sources, use this if your sources are outdated"
+    _message "Adding 'build' will only build without installing to the steam compatibility tools directory"
+    _message "  Adding 'cleanbuild' just runs 'make clean' in the build directory before 'make'"
+    _message "  Adding 'no-bundle-umu' WON'T build the latest umu-launcher from master and place 'umu-run' it in Proton's toplevel directory"
+    _message "Adding 'install' will only install to the steam compatibility tools directory without rebuilding"
+    _message "Adding 'reclone' redownloads sources, use this if your sources are outdated"
+
     exit 0
 }
 ##############################################
-# Run main function
+# Parse arguments and run main function
 ##############################################
-
-_main "$@"
+_parse_args "$@"
+_main
