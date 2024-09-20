@@ -201,6 +201,11 @@ _repo_updater() {
 
     cd "${repo_path}" || _failure "Couldn't change directory to ${repo_path}."
 
+    # set a fake git config so it's not prompted
+    git config commit.gpgsign false &>/dev/null || true
+    git config user.email "proton@umu.builder" &>/dev/null || true
+    git config user.name "umubuilder" &>/dev/null || true
+
     git fetch --depth 1 origin
 
     local target_ref="${specific_ref:-origin/HEAD}"
@@ -283,7 +288,7 @@ _failure() {
     exit 1
 }
 _help() {
-    _message "./setup.sh [help] [buildonly] [cleanbuild] [bundle-umu]"
+    _message "./setup.sh [help] [buildonly] [cleanbuild] [no-bundle-umu]"
     echo ""
     _message "No arguments grabs sources, patches, builds, and installs"
     _message "  Adding 'buildonly' will only build without installing to the steam compatibility tools directory"
