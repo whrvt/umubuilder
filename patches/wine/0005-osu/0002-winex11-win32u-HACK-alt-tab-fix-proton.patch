@@ -1,3 +1,22 @@
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index 2dcc3e20d3e..4b6b6d40618 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -3427,6 +3427,14 @@ BOOL set_window_pos( WINDOWPOS *winpos, int parent_x, int parent_y )
+ 
+     orig_flags = winpos->flags;
+ 
++    /* osu! hack: fix osu! staying over other apps on certain WMs (ex. i3, sway) and xFCE */
++    if (__wine_get_window_manager() == WINE_WM_UNKNOWN || __wine_get_window_manager() == WINE_WM_X11_XFCE)
++    {
++        if (winpos->hwndInsertAfter == HWND_NOTOPMOST &&
++        (get_window_long(winpos->hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST))
++            winpos->flags |= SWP_NOACTIVATE | SWP_NOZORDER;
++    }
++
+     /* First, check z-order arguments.  */
+     if (!(winpos->flags & SWP_NOZORDER))
+     {
 diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
 index 98723a302ed..d4211571d9d 100644
 --- a/dlls/winex11.drv/window.c
