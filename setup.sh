@@ -4,7 +4,7 @@ buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos_9.0_20240917
+protontag=cachyos-9.0-20240918
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -205,6 +205,7 @@ _repo_updater() {
     git config commit.gpgsign false &>/dev/null || true
     git config user.email "proton@umu.builder" &>/dev/null || true
     git config user.name "umubuilder" &>/dev/null || true
+    git config advice.detachedHead false &>/dev/null || true
 
     git fetch --depth 1 origin
 
@@ -223,11 +224,15 @@ _repo_updater() {
 
             # Tag case
             if git rev-parse "refs/tags/${specific_ref}" >/dev/null 2>&1; then
+            {
                 git checkout -f "${specific_ref}" &&
                 _message "Checked out ${repo_path} at tag ${specific_ref}."
+            } || _failure "Couldn't check out your tag."
             else # Branch case
+            {
                 git checkout -B "${specific_ref}" "origin/${target_ref}" &&
                 _message "Checked out ${repo_path} at branch ${specific_ref} targeting origin/${target_ref}."
+            } || _failure "Couldn't check out your tag."
             fi
         else
             # Otherwise just reset to origin/HEAD
