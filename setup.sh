@@ -1,5 +1,5 @@
 #!/bin/bash
-pkgver=9-4
+pkgver=9-5
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
