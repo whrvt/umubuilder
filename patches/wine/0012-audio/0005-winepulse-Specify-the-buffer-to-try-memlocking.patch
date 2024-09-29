@@ -1,0 +1,69 @@
+From b1ac681f88154ef80c82d945746cc9c42be2fae2 Mon Sep 17 00:00:00 2001
+From: William Horvath <william@horvath.blog>
+Date: Thu, 26 Sep 2024 05:12:47 -0700
+Subject: [PATCH 5/6] winepulse: Specify the buffer to try memlocking.
+
+---
+ dlls/winepulse.drv/pulse.c | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
+index 74253d9..833b9ff 100644
+--- a/dlls/winepulse.drv/pulse.c
++++ b/dlls/winepulse.drv/pulse.c
+@@ -205,11 +205,24 @@ static char *wstr_to_str(const WCHAR *wstr)
+     return str;
+ }
+ 
+-static void try_memlock(struct pulse_stream *stream, SIZE_T bytes)
++enum lock_buffer_type
++{
++    BUFTYPE_LOCAL,
++    BUFTYPE_TMP
++};
++
++static void try_memlock(struct pulse_stream *stream, SIZE_T bytes, enum lock_buffer_type buftype)
+ {
+     if (!allow_memlock) return;
+ 
+-    if (NtLockVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer, &bytes, 1))
++    NTSTATUS ret;
++
++    if (buftype == BUFTYPE_LOCAL)
++        ret = NtLockVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer, &bytes, 1);
++    else /* BUFTYPE_TMP */
++        ret = NtLockVirtualMemory(GetCurrentProcess(), (void **)&stream->tmp_buffer, &bytes, 1);
++
++    if (ret)
+         WARN("Couldn't memlock audio buffer.\n");
+     else
+         TRACE("Successfully memlocked audio buffer.\n");
+@@ -1237,7 +1250,7 @@ static NTSTATUS pulse_create_stream(void *args)
+                                             zero_bits, &stream->bufsize_bytes, MEM_COMMIT, PAGE_READWRITE))
+                     hr = E_OUTOFMEMORY;
+                 else
+-                    try_memlock(stream, stream->bufsize_bytes);
++                    try_memlock(stream, stream->bufsize_bytes, BUFTYPE_LOCAL);
+             }
+         }
+         else {
+@@ -1836,7 +1849,7 @@ static BOOL alloc_tmp_buffer(struct pulse_stream *stream, SIZE_T bytes)
+         return FALSE;
+ 
+     stream->tmp_buffer_bytes = bytes;
+-    try_memlock(stream, bytes);
++    try_memlock(stream, bytes, BUFTYPE_TMP);
+     return TRUE;
+ }
+ 
+@@ -2620,6 +2633,7 @@ static NTSTATUS pulse_set_sample_rate(void *args)
+     silence_buffer(new_ss.format, new_buffer, size);
+     stream->local_buffer = new_buffer;
+ 
++    try_memlock(stream, size, BUFTYPE_LOCAL);
+ exit:
+     pulse_unlock();
+ 
+-- 
+2.46.2
+

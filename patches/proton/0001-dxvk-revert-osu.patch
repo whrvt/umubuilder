@@ -1,153 +1,16 @@
-diff --git a/src/d3d9/d3d9_device.cpp b/src/d3d9/d3d9_device.cpp
-index 59ae516a..12977f04 100644
---- a/dxvk/src/d3d9/d3d9_device.cpp
-+++ b/dxvk/src/d3d9/d3d9_device.cpp
-@@ -1094,12 +1094,7 @@ namespace dxvk {
-     if (unlikely(iSwapChain != 0))
-       return D3DERR_INVALIDCALL;
- 
--    D3D9DeviceLock lock = LockDevice();
--
--    // In windowed mode, GetFrontBufferData takes a screenshot of the entire screen.
--    // We use the last used swapchain as a workaround.
--    // Total War: Medieval 2 relies on this.
--    return m_mostRecentlyUsedSwapchain->GetFrontBufferData(pDestSurface);
-+    return m_implicitSwapchain->GetFrontBufferData(pDestSurface);
-   }
- 
- 
-@@ -8016,10 +8011,8 @@ namespace dxvk {
-       if (FAILED(hr))
-         return hr;
-     }
--    else {
-+    else
-       m_implicitSwapchain = new D3D9SwapChainEx(this, pPresentationParameters, pFullscreenDisplayMode);
--      m_mostRecentlyUsedSwapchain = m_implicitSwapchain.ptr();
--    }
- 
-     if (pPresentationParameters->EnableAutoDepthStencil) {
-       D3D9_COMMON_TEXTURE_DESC desc;
-diff --git a/src/d3d9/d3d9_device.h b/src/d3d9/d3d9_device.h
-index be2ad81c..5a293bb9 100644
---- a/dxvk/src/d3d9/d3d9_device.h
-+++ b/dxvk/src/d3d9/d3d9_device.h
-@@ -1261,34 +1261,6 @@ namespace dxvk {
- 
-     uint64_t GetCurrentSequenceNumber();
- 
--    /**
--     * @brief Get the swapchain that was used the most recently for presenting
--     * Has to be externally synchronized.
--     * 
--     * @return D3D9SwapChainEx* Swapchain
--     */
--    D3D9SwapChainEx* GetMostRecentlyUsedSwapchain() {
--      return m_mostRecentlyUsedSwapchain;
--    }
--
--    /**
--     * @brief Set the swapchain that was used the most recently for presenting
--     * Has to be externally synchronized.
--     * 
--     * @param swapchain Swapchain
--     */
--    void SetMostRecentlyUsedSwapchain(D3D9SwapChainEx* swapchain) {
--      m_mostRecentlyUsedSwapchain = swapchain;
--    }
--
--    /**
--     * @brief Reset the most recently swapchain back to the implicit one
--     * Has to be externally synchronized.
--     */
--    void ResetMostRecentlyUsedSwapchain() {
--      m_mostRecentlyUsedSwapchain = m_implicitSwapchain.ptr();
--    }
--
-     Com<D3D9InterfaceEx>            m_parent;
-     D3DDEVTYPE                      m_deviceType;
-     HWND                            m_window;
-@@ -1457,8 +1429,6 @@ namespace dxvk {
-     HWND                            m_fullscreenWindow         = NULL;
-     std::atomic<uint32_t>           m_losableResourceCounter   = { 0 };
- 
--    D3D9SwapChainEx*                m_mostRecentlyUsedSwapchain = nullptr;
--
- #ifdef D3D9_ALLOW_UNMAPPING
-     lru_list<D3D9CommonTexture*>    m_mappedTextures;
- #endif
-diff --git a/src/d3d9/d3d9_swapchain.cpp b/src/d3d9/d3d9_swapchain.cpp
-index fcfd65d0..68d10b24 100644
---- a/dxvk/src/d3d9/d3d9_swapchain.cpp
-+++ b/dxvk/src/d3d9/d3d9_swapchain.cpp
-@@ -65,16 +65,6 @@ namespace dxvk {
-     if (this_thread::isInModuleDetachment())
-       return;
- 
--    {
--      // Locking here and in Device::GetFrontBufferData
--      // ensures that other threads don't accidentally access a stale pointer.
--      D3D9DeviceLock lock = m_parent->LockDevice();
--
--      if (m_parent->GetMostRecentlyUsedSwapchain() == this) {
--        m_parent->ResetMostRecentlyUsedSwapchain();
--      }
--    }
--
-     DestroyBackBuffers();
- 
-     ResetWindowProc(m_window);
-@@ -122,8 +112,6 @@ namespace dxvk {
-           DWORD    dwFlags) {
-     D3D9DeviceLock lock = m_parent->LockDevice();
- 
--    m_parent->SetMostRecentlyUsedSwapchain(this);
--
-     if (unlikely(m_parent->IsDeviceLost()))
-       return D3DERR_DEVICELOST;
- 
-@@ -400,20 +388,6 @@ namespace dxvk {
-       blitInfo.srcOffsets[0] = VkOffset3D{ 0, 0, 0 };
-       blitInfo.srcOffsets[1] = VkOffset3D{ int32_t(srcExtent.width),  int32_t(srcExtent.height),  1 };
- 
--#ifdef _WIN32
--      if (m_presentParams.Windowed) {
--        // In windowed mode, GetFrontBufferData takes a screenshot of the entire screen.
--        // So place the copy of the front buffer at the position of the window.
--        POINT point = { 0, 0 };
--        if (ClientToScreen(m_window, &point) != 0) {
--          blitInfo.dstOffsets[0].x = point.x;
--          blitInfo.dstOffsets[0].y = point.y;
--          blitInfo.dstOffsets[1].x += point.x;
--          blitInfo.dstOffsets[1].y += point.y;
--        }
--      }
--#endif
--
-       m_parent->EmitCs([
-         cDstImage = blittedSrc,
-         cDstMap   = dstTexInfo->GetMapping().Swizzle,
-diff --git a/src/util/config/config.cpp b/src/util/config/config.cpp
-index c8ed3a1c..e18326a0 100644
---- a/dxvk/src/util/config/config.cpp
-+++ b/dxvk/src/util/config/config.cpp
-@@ -881,10 +881,10 @@ namespace dxvk {
-     { R"(\\UK Truck Simulator\\bin\\win_x86\\game\.exe$)", {{
-       { "d3d9.floatEmulation",              "Strict" },
-     }} },
--    /* d3d9 Supreme Ruler games              *
-+    /* Supreme Ruler Ultimate                    *
-      * Leaks a StateBlock leading                *
-      * to Reset calls failing                    */
--    { R"(\\SupremeRuler(Ultimate|GreatWar|1936|CW)\.exe$)", {{
-+    { R"(\\SupremeRulerUltimate\.exe$)", {{
-       { "d3d9.countLosableResources",       "False" },
-     }} },
-     /* Operation Flashpoint: Red River           *
-diff --git a/src/d3d9/d3d9_device.cpp b/src/d3d9/d3d9_device.cpp
-index e53c96a3..7320f079 100644
---- a/dxvk/src/d3d9/d3d9_device.cpp
-+++ b/dxvk/src/d3d9/d3d9_device.cpp
+From 49b18f03fe7c6dd29e9aa296c5cd072d3765a1bb Mon Sep 17 00:00:00 2001
+From: Robin Kertels <robin.kertels@gmail.com>
+Date: Tue, 20 Feb 2024 23:34:26 +0100
+Subject: [PARTIAL REVERT] [d3d9] Unbind buffers in EndScene & Reset
+
+---
+ dxvk/src/d3d9/d3d9_device.cpp | 18 ------------------
+ 1 file changed, 18 deletions(-)
+
+diff --git b/dxvk/src/d3d9/d3d9_device.cpp a/dxvk/src/d3d9/d3d9_device.cpp
+index 2b340c74..f11ae400 100644
+--- b/dxvk/src/d3d9/d3d9_device.cpp
++++ a/dxvk/src/d3d9/d3d9_device.cpp
 @@ -482,14 +482,6 @@ namespace dxvk {
        return hr;
      }
@@ -163,19 +26,19 @@ index e53c96a3..7320f079 100644
      Flush();
      SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
  
-@@ -1616,15 +1608,6 @@ namespace dxvk {
-     ConsiderFlush(GpuFlushType::ImplicitStrongHint);
- 
-     m_flags.clr(D3D9DeviceFlag::InScene);
--
--    // D3D9 resets the internally bound vertex buffers and index buffer in EndScene if they were unbound in the meantime.
--    // We have to ignore unbinding those buffers because of Operation Flashpoint Red River,
--    // so we should also clear the bindings here, to avoid leaks.
--    if (m_state.indices == nullptr) {
--      EmitCs([](DxvkContext* ctx) {
--        ctx->bindIndexBuffer(DxvkBufferSlice(), VK_INDEX_TYPE_UINT32);
--      });
--    }
-     
-     for (uint32_t i = 0; i < caps::MaxStreams; i++) {
-       if (m_state.vertexBuffers[i].vertexBuffer == nullptr) {
+#@@ -1655,15 +1647,6 @@ namespace dxvk {
+# 
+#     m_flags.clr(D3D9DeviceFlag::InScene);
+# 
+#-    // D3D9 resets the internally bound vertex buffers and index buffer in EndScene if they were unbound in the meantime.
+#-    // We have to ignore unbinding those buffers because of Operation Flashpoint Red River,
+#-    // so we should also clear the bindings here, to avoid leaks.
+#-    if (m_state.indices == nullptr) {
+#-      EmitCs([](DxvkContext* ctx) {
+#-        ctx->bindIndexBuffer(DxvkBufferSlice(), VK_INDEX_TYPE_UINT32);
+#-      });
+#-    }
+#-
+#     for (uint32_t i : bit::BitMask(~m_activeVertexBuffers & ((1 << 16) - 1))) {
+#       if (m_state.vertexBuffers[i].vertexBuffer == nullptr) {
+#         EmitCs([cIndex = i](DxvkContext* ctx) {

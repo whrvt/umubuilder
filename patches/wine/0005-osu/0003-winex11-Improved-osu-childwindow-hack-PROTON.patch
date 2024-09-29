@@ -1,0 +1,119 @@
+From 71b8398719dc429ec6eb975366717369accabcbe Mon Sep 17 00:00:00 2001
+From: William Horvath <william@horvath.blog>
+Date: Sat, 28 Sep 2024 21:12:01 -0700
+Subject: [PATCH] winex11: Improved osu! childwindow hack. (PROTON)
+
+'WindowsForms10.Window.808.app.0.360e033_r26_ad1' is the name of the editor
+window class, so just look around to see if it's visible to determine whether
+or not we really need to render offscreen. If not, we can maintain
+
+the composition-free page-flipping rendering path instead of blitting.
+---
+ dlls/ntdll/unix/loader.c  |  9 ++++++++
+ dlls/winex11.drv/opengl.c | 44 ++++++++++++++++++++++++++++++++-------
+ dlls/winex11.drv/x11drv.h |  8 +++++++
+ 3 files changed, 53 insertions(+), 8 deletions(-)
+
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index ea5bfa29903..12daf7afc03 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -1918,6 +1918,15 @@ static void hacks_init(void)
+         ERR( "HACK: ram_reporting_bias %lldMB.\n", ram_reporting_bias / (1024 * 1024) );
+     }
+ 
++    if (main_argc > 1 && (strstr(main_argv[1], "osu!.exe")))
++    {
++        env_str = getenv("WINE_DISABLE_GLCHILD_HACK");
++        if (!(env_str && *env_str != '\0' && *env_str != '0'))
++        {
++            setenv( "OSU_CHILD_HACK", "1", 0 );
++        }
++    }
++
+     env_str = getenv("WINE_DISABLE_SFN");
+     if (env_str)
+         disable_sfn = !!atoi(env_str);
+diff --git a/dlls/winex11.drv/opengl.c b/dlls/winex11.drv/opengl.c
+index 0c3c81bcda6..68c623e008c 100644
+--- a/dlls/winex11.drv/opengl.c
++++ b/dlls/winex11.drv/opengl.c
+@@ -1478,20 +1478,48 @@ static enum dc_gl_layered_type get_gl_layered_type( HWND hwnd )
+     return ret;
+ }
+ 
+-static BOOL drawable_needs_clipping( HWND hwnd, BOOL known_child )
++static BOOL editor_class_matches( HWND hwnd )
+ {
+-    static int no_child_clipping_cached = -1;
++    WCHAR buffer[256];
++    UNICODE_STRING name = { .Buffer = buffer, .MaximumLength = sizeof(buffer) };
++    UINT style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
++    INT length = NtUserGetClassName( hwnd, FALSE, &name );
+ 
+-    if (no_child_clipping_cached == -1)
++    if (length > 0)
+     {
+-        const char *sgi = getenv( "SteamGameId" );
++        static const WCHAR substr[] = {'W','i','n','d','o','w','s','F','o','r','m','s','1','0','.','W','i','n','d','o','w','.','8','0','8','.','a','p','p','.', 0};
++        return (wcsncmp( buffer, substr, wcslen(substr) - 1 ) == 0) && !(style & WS_MINIMIZE);
++    }
++    return FALSE;
++}
+ 
+-        no_child_clipping_cached = sgi && (!strcmp( sgi, "2229850" ) || !strcmp( sgi, "2229880" ));
+-        if (no_child_clipping_cached) FIXME( "HACK: disabling child GL window clipping.\n" );
++static BOOL editor_visible( HWND current )
++{
++    while (current)
++    {
++        if (editor_class_matches( current ))
++            return TRUE;
++
++        HWND child = NtUserGetWindowRelative( current, GW_CHILD );
++        if (child)
++        {
++            if (editor_visible( child ))
++                return TRUE;
++        }
++        current = NtUserGetWindowRelative( current, GW_HWNDNEXT );
+     }
++    return FALSE;
++}
+ 
+-    if (known_child && !no_child_clipping_cached) return TRUE;
+-    return (!no_child_clipping_cached && NtUserGetWindowRelative( hwnd, GW_CHILD )) || NtUserGetAncestor( hwnd, GA_PARENT ) != NtUserGetDesktopWindow();
++static BOOL drawable_needs_clipping( HWND hwnd, BOOL known_child )
++{
++    if (!use_osu_child_hack() || editor_visible( hwnd ))
++    {
++        if (NtUserGetAncestor( hwnd, GA_PARENT ) != NtUserGetDesktopWindow()) return TRUE; /* child window, needs compositing */
++        if (NtUserGetWindowRelative( hwnd, GW_CHILD )) return TRUE; /* window has children, needs compositing */
++        if (known_child) return TRUE; /* window is/have children, needs compositing */
++    }
++    return FALSE;
+ }
+ 
+ /***********************************************************************
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index c45fd341ae5..5254c376e52 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -1017,6 +1017,14 @@ static inline void ascii_to_unicode( WCHAR *dst, const char *src, size_t len )
+     while (len--) *dst++ = (unsigned char)*src++;
+ }
+ 
++static inline BOOL use_osu_child_hack(void)
++{
++    const char *e = getenv("OSU_CHILD_HACK");
++    if (e && *e != '\0' && *e != '0') return TRUE;
++
++    return FALSE;
++}
++
+ static inline UINT asciiz_to_unicode( WCHAR *dst, const char *src )
+ {
+     WCHAR *p = dst;
+-- 
+2.46.2
+
