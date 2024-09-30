@@ -4,7 +4,7 @@ buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20240918
+protontag=cachyos-9.0-20240928
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -242,9 +242,9 @@ _repo_updater() {
         # Keep submodules updated
         if [ -f ".gitmodules" ]; then
             _message "Updating submodules for ${repo_path}."
-            git submodule update --init --depth 1 --recursive
+            git submodule update --init --depth 1 --recursive -f
             # shellcheck disable=SC2016
-            git submodule foreach --recursive '
+            git submodule foreach --recursive -f '
                 if [ -n "$(git status --porcelain)" ]; then
                     git reset --hard
                     git clean -ffdx
