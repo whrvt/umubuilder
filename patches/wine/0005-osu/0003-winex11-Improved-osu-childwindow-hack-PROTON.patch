@@ -56,7 +56,7 @@ index 0c3c81bcda6..68c623e008c 100644
      {
 -        const char *sgi = getenv( "SteamGameId" );
 +        static const WCHAR substr[] = {'W','i','n','d','o','w','s','F','o','r','m','s','1','0','.','W','i','n','d','o','w','.','8','0','8','.','a','p','p','.', 0};
-+        return (wcsncmp( buffer, substr, wcslen(substr) - 1 ) == 0) && !(style & WS_MINIMIZE);
++        return wcsncmp( buffer, substr, wcslen(substr) - 1 ) == 0;
 +    }
 +    return FALSE;
 +}
