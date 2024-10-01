@@ -244,7 +244,7 @@ _repo_updater() {
             _message "Updating submodules for ${repo_path}."
             git submodule update --init --depth 1 --recursive -f
             # shellcheck disable=SC2016
-            git submodule foreach --recursive -f '
+            git submodule foreach --recursive '
                 if [ -n "$(git status --porcelain)" ]; then
                     git reset --hard
                     git clean -ffdx

@@ -1,0 +1,12 @@
+diff --git a/tools/makedep.c b/tools/makedep.c
+index 8108d21..71a6681 100644
+--- a/tools/makedep.c
++++ b/tools/makedep.c
+@@ -2750,7 +2750,6 @@ static void output_source_asm_one_arch( struct makefile *make, struct incl_file
+     else
+         output( "\t%s%s -c -o $@", cmd_prefix( "CC" ), arch_make_variable( "CC", arch ) );
+     output_filenames( defines );
+-    output_filenames( cpp_flags );
+     output_filenames( get_expanded_make_var_array( make, "EXTRAASMFLAGS" ));
+     output_filenames( get_expanded_file_local_var( make, obj, "EXTRAASMFLAGS" ));
+     strcpy( buffer, archs.str[arch] );

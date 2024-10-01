@@ -48,7 +48,7 @@ index 0c3c81bcda6..68c623e008c 100644
 -    static int no_child_clipping_cached = -1;
 +    WCHAR buffer[256];
 +    UNICODE_STRING name = { .Buffer = buffer, .MaximumLength = sizeof(buffer) };
-+    UINT style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
++
 +    INT length = NtUserGetClassName( hwnd, FALSE, &name );
  
 -    if (no_child_clipping_cached == -1)
