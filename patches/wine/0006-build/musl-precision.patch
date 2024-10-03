@@ -15,12 +15,14 @@ diff --git a/configure.ac b/configure.ac
 index 11111111111..11111111111 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -925,6 +925,8 @@ do
+@@ -925,6 +925,10 @@ do
              AS_VAR_APPEND([${wine_arch}_EXTRACFLAGS],[" $llvm_extra_cflags"])
              AS_VAR_APPEND([${wine_arch}_LDFLAGS],[" $llvm_extra_ldflags"])
              CFLAGS="$llvm_extra_cflags $llvm_cflags"
 +        else
-+            AC_SUBST(MUSL_I386_FLAGS,"-ffloat-store")
++            case $wine_arch in
++                i386) AC_SUBST(MUSL_I386_FLAGS,"-ffloat-store") ;;
++            esac
          fi
          AS_VAR_SET([${wine_arch}_TARGET],[$target])])
      AS_VAR_POPDEF([wine_cv_crosscc])
