@@ -37,7 +37,7 @@ index 0adb029f..367b7203 100644
  dist: all
  
 -J = $(patsubst -j%,%,$(SUBJOBS))
-+J = 16
++J = $(SUBJOBS)
  
  include $(SRC)/make/utility.mk
  include $(SRC)/make/rules-source.mk
