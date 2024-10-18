@@ -1,10 +1,10 @@
 #!/bin/bash
-pkgver=9-6
+pkgver=9-7
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
-protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20240928
+protonurl=https://github.com/GloriousEggroll/proton-ge-custom.git
+protontag=GE-Proton9-16
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -86,7 +86,7 @@ _envsetup() {
     export WINEFSYNC=0
     export DISPLAY=
 
-    CPUs="$(nproc)" && export CPUs
+    CPUs="$(($(nproc) + 1))" && export CPUs
     export MAKEFLAGS="-j$CPUs"
     export NINJAFLAGS="-j$CPUs"
     export SUBJOBS="$CPUs"
@@ -112,12 +112,21 @@ _patch() {
             _message "Applying ${shortname}"
             patch -Np1 <"${patch}" || _failure "Couldn't apply ${shortname}"
         done
+
+        if [ "${subdir}" = "proton" ] && [[ "${protonurl}" =~ "GloriousEggroll" ]]; then
+            _message "Applying GE patches"
+            ./patches/protonprep-valve-staging.sh || _failure "Couldn't apply a GE protonprep patch"
+        fi
     done
 
     cd "${srcdir}"
 
     # Hardcode #CPUs in files to speed up compilation and avoid strange substitution problems
-    find make/*mk Makefile.in -execdir sed -i "s/[\$]*(SUBJOBS)/$CPUs/g" '{}' +
+    find make/*mk Makefile.in -execdir sed -i \
+        -e "s/[\$]*(SUBJOBS)/$CPUs/g" \
+        -e "s/J = \$(patsubst -j%,%,\$(filter -j%,\$(MAKEFLAGS)))/J = $CPUs/" \
+        -e "s/J := \$(shell nproc)/J := $CPUs/" \
+        '{}' +
 }
 ##############################################
 # Build
