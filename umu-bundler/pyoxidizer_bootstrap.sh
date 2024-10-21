@@ -22,12 +22,6 @@ write_sentinel() {
     [ "$1" = "venv" ] && echo "PYOXIDIZER_VENV=$2" >> "$sentinel_file"
 }
 
-write_sentinel() {
-    echo "BOOTSTRAP_COMPLETE=true" > "$sentinel_file"
-    echo "PYOXIDIZER_INSTALL=$1" >> "$sentinel_file"
-    [ "$1" = "venv" ] && echo "PYOXIDIZER_VENV=$2" >> "$sentinel_file"
-}
-
 install_pyoxidizer() {
     if command -v pipx &> /dev/null; then
         echo "Installing PyOxidizer 0.23.0 using pipx..."
