@@ -13,7 +13,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-#define UMU_VERSION_CHECKSUM 13075
+#define UMU_VERSION_CHECKSUM ""
 
 #define BUFFER_SIZE 4096
 #define SIZE_STR_LEN 20

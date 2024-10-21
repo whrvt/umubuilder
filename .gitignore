@@ -1,6 +1,7 @@
 umu-bundler/util/include
 umu-bundler/util/libarchive.a
 umu-bundler/util/pyoxidizer_bootstrap_info.sh
+umu-bundler/util/musl-toolchain/
 umu-build/
 build/
 build_tarballs/
