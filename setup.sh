@@ -14,74 +14,75 @@ umu_launcherurl=https://github.com/Open-Wine-Components/umu-launcher.git
 # Do everything
 ##############################################
 _main() {
-    _script_realpath=$(realpath "$(dirname "$0")")
-
     _envsetup || _failure "Failed preparing build environment."
     _dirsetup_initial || _failure "Failed initial directory setup."
+    _parse_args "$@"
 
-    if [ "${_do_build}" = "true" ]; then
+    if [ "${_do_umu_only}" = "true" ]; then
+        _sources umu || _failure "Failed to prepare umu sources."
+        _patch umu || _failure "Failed to apply umu patches."
+        _build_umu_run || _failure "Building umu-run failed."
+        _umu_standalone_finalize
+    elif [ "${_do_build}" = "true" ]; then
         _sources || _failure "Failed to prepare sources."
-        _patch proton wine || _failure "Failed to apply patches."
+        _patch proton wine umu || _failure "Failed to apply patches."
         _build || _failure "Build failed."
-        if [ "${_do_install}" = "true" ]; then
-            _install || _failure "Install failed."
-        fi
+        [ "${_do_install}" = "true" ] && _install || _failure "Install failed."
     fi
 
     _message "Script finished."
     exit 0
 }
 ##############################################
-# Parse arguments (badly, PRs welcome :^) )
+# Parse arguments
 ##############################################
 _parse_args() {
-    # will exit early here if help specified
-    if [[ "${*}" =~ .*help.* ]]; then _help; fi
+    _do_build=false
+    _do_install=false
+    _do_bundle_umu=true
+    _do_cleanbuild=false
+    _do_umu_only=false
 
-    if [[ "${*}" =~ "buildonly" ]]; then
-        _do_build=true
-        _message "Will only be building Proton without installing it."
-    else
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            *help*) _help ;;
+            buildonly) _do_build=true ;;
+            no-bundle-umu) _do_bundle_umu=false ;;
+            cleanbuild) _do_cleanbuild=true ;;
+            umu-only) _do_umu_only=true ;;
+            *) _warning "Unknown option: $1" ;;
+        esac
+        shift
+    done
+
+    if [ "${_do_umu_only}" = "false" ] && [ "${_do_build}" = "false" ]; then
         _do_build=true
         _do_install=true
-        _message "Will build Proton and also install it to the Steam compatibility tools directory."
     fi
 
-    if [[ "${*}" =~ "no-bundle-umu" ]]; then
-        _do_bundle_umu=false
-        _message "Won't bundle umu-run with Proton."
-    else
-        _do_bundle_umu=true
-        _message "Will bundle umu-run with Proton."
-    fi
-    if [[ "${*}" =~ "cleanbuild" ]]; then
-        _do_cleanbuild=true
-        _message "Will run 'make clean' before building."
-    fi
-    if [[ "${*}" =~ "wineonly" ]]; then
-        _do_build_wine_only=true
-        _message "Will only build wine without the rest of Proton's sources (BROKEN)"
-    fi
+    _print_config
 }
 ##############################################
 # Directories
 ##############################################
 _dirsetup_initial() {
-    scriptdir="${_script_realpath}" && export scriptdir
+    scriptdir="$(realpath "$(dirname "$0")")" && export scriptdir
     srcdir="${scriptdir}/proton" && export srcdir
     builddir="${scriptdir}/build" && export builddir
-    if [ ! -d "${builddir}" ]; then mkdir "${builddir}"; fi
+    mkdir -p "${builddir}"
 
     build_out_dir="${scriptdir}/build_tarballs"
-    if [ ! -d "${build_out_dir}" ]; then mkdir "${build_out_dir}"; fi
+    mkdir -p "${build_out_dir}"
 
     patchdir="${scriptdir}/patches" && export patchdir
+
+    umu_launcher_dir="${scriptdir}/umu-launcher" && export umu_launcher_dir
+    umu_bundler_dir="${scriptdir}/umu-bundler" && export umu_bundler_dir
 }
 ##############################################
 # Environment
 ##############################################
 _envsetup() {
-    # For wineprefix setup during build
     export WINEESYNC=0
     export WINEFSYNC=0
     export DISPLAY=
@@ -95,20 +96,23 @@ _envsetup() {
 # Patches
 ##############################################
 _patch() {
-    cd "${srcdir}" || _failure "No source dir!"
-
-    if [ -z "${*}" ]; then _failure "There were no directories specified to _patch."; fi
+    [ -z "${*}" ] && _failure "No directories specified to _patch."
 
     for subdir in "${@}"; do
-        # "hack" to support patches that are rooted in wine
-        if [ "${subdir}" = "wine" ]; then 
-            cd "${srcdir}/wine"
-        fi
+        local target_dir
+        case "${subdir}" in
+            proton) target_dir="${srcdir}" ;;
+            wine) target_dir="${srcdir}/${subdir}" ;;
+            umu) target_dir="${umu_launcher_dir}" ;;
+            *) _failure "Unknown patch target: ${subdir}" ;;
+        esac
+
+        cd "${target_dir}" || _failure "Specified root directory to apply patches doesn't exist: ${target_dir}"
 
         mapfile -t patchlist < <(find "${patchdir}/${subdir}" -type f -regex ".*\.patch" | LC_ALL=C sort -f)
 
         for patch in "${patchlist[@]}"; do
-            shortname="${patch#"${scriptdir}/"}"
+            shortname="${patch#"${patchdir}/"}"
             _message "Applying ${shortname}"
             patch -Np1 <"${patch}" || _failure "Couldn't apply ${shortname}"
         done
@@ -117,16 +121,16 @@ _patch() {
             _message "Applying GE patches"
             ./patches/protonprep-valve-staging.sh || _failure "Couldn't apply a GE protonprep patch"
         fi
+
+        if [ "${subdir}" = "proton" ]; then
+            find make/*mk Makefile.in -execdir sed -i \
+                -e "s/[\$]*(SUBJOBS)/$CPUs/g" \
+                -e "s/J = \$(patsubst -j%,%,\$(filter -j%,\$(MAKEFLAGS)))/J = $CPUs/" \
+                -e "s/J := \$(shell nproc)/J := $CPUs/" \
+                '{}' +
+        fi
     done
-
-    cd "${srcdir}"
-
-    # Hardcode #CPUs in files to speed up compilation and avoid strange substitution problems
-    find make/*mk Makefile.in -execdir sed -i \
-        -e "s/[\$]*(SUBJOBS)/$CPUs/g" \
-        -e "s/J = \$(patsubst -j%,%,\$(filter -j%,\$(MAKEFLAGS)))/J = $CPUs/" \
-        -e "s/J := \$(shell nproc)/J := $CPUs/" \
-        '{}' +
+    return 0;
 }
 ##############################################
 # Build
@@ -143,33 +147,102 @@ _build() {
 
     "${srcdir}"/configure.sh "${_arglist[@]}" || _failure "Configuring proton failed."
 
-    if [ "${_do_cleanbuild}" = "true" ]; then 
+    [ "${_do_cleanbuild}" = "true" ] && {
         _message "Cleaning build directory."
         make clean
-    fi
+    }
 
     make -j1 redist || _failure "Build failed."
-
-    if [ "${_do_bundle_umu}" = "true" ]; then 
-        cd "${scriptdir}"/umu-launcher && ./configure.sh --user-install && mkdir pkg && make DESTDIR=pkg install && cd "${builddir}"
-        rm -rf "${buildname}"/umu-run
-        shopt -s globstar
-        cp -a "${scriptdir}"/umu-launcher/pkg/**/.local/bin/umu-run "${buildname}"/umu-run
-        shopt -u globstar
+    if [ "${_do_bundle_umu}" = "true" ]; then
+        _message "Starting static umu-run bundling procedure..."
+        if ! _build_umu_run; then
+            _warning "Failed to build umu-run. Continuing without it."
+        else
+            _message "Copying umu-run to build directory..."
+            rm -rf "${builddir}/${buildname}/umu-run"
+            cp "${umu_bundler_dir}/work/umu-run" "${builddir}/${buildname}/umu-run" || _failure "Failed to copy umu-run to the final build directory."
+            rm -rf "${umu_bundler_dir}/work"
+        fi
+        cd "${builddir}"
     fi
 
-    _message "Creating archive: ${pkgname}.tar.xz" &&
+    _message "Creating archive: ${pkgname}.tar.xz"
     XZ_OPT="-9 -T0" tar -Jcf "${build_out_dir}"/"${pkgname}".tar.xz --numeric-owner --owner=0 --group=0 --null "${buildname}" &&
     sha512sum "${build_out_dir}"/"${pkgname}".tar.xz > "${build_out_dir}"/"${pkgname}".sha512sum &&
     _message "${pkgname}.tar.xz is now ready in the build_tarballs directory"
 }
 ##############################################
-# Install
+# Build a static umu-run redistributable
+##############################################
+_build_umu_run() {
+    local oxidize_dir="${umu_launcher_dir}/oxidize"
+    local work_dir="${umu_bundler_dir}/work"
+    local sentinel_file="${umu_bundler_dir}/pyoxidizer_bootstrap_info.sh"
+
+    [ -f "$sentinel_file" ] && {
+        source "$sentinel_file"
+        [ "$BOOTSTRAP_COMPLETE" != "true" ] && {
+            "${umu_bundler_dir}/pyoxidizer_bootstrap.sh" || {
+                _warning "PyOxidizer bootstrap failed. Skipping umu-run build."
+                return 1
+            }
+            source "$sentinel_file"
+        }
+    } || {
+        "${umu_bundler_dir}/pyoxidizer_bootstrap.sh" || {
+            _warning "PyOxidizer bootstrap failed. Skipping umu-run build."
+            return 1
+        }
+        source "$sentinel_file"
+    }
+
+    rm -rf "${work_dir}"
+    mkdir -p "${work_dir}"
+
+    cd "${umu_launcher_dir}" || _failure "Failed to change directory to ${umu_launcher_dir}"
+    ./configure.sh --user-install || _failure "Failed to run configure.sh for umu-launcher"
+    make version || _failure "Failed to run make version for umu-launcher"
+
+    mkdir -p "${oxidize_dir}"
+    cp "${umu_bundler_dir}/pyoxidizer.bzl" "${oxidize_dir}/"
+    if [ ! -x "${oxidize_dir}/prctl_helper" ]; then
+        cc -static -o "${oxidize_dir}/prctl_helper" "${umu_bundler_dir}/prctl_helper.c" || _failure "Failed to compile the required prctl_helper for umu."
+    fi
+
+    cd "${oxidize_dir}" || _failure "Failed to change directory to ${oxidize_dir}"
+
+    case $PYOXIDIZER_INSTALL in
+        venv)
+            source "$PYOXIDIZER_VENV/bin/activate"
+            pyoxidizer build --release --target-triple x86_64-unknown-linux-musl || _failure "PyOxidizer build failed"
+            deactivate
+            ;;
+        *)
+            pyoxidizer build --release --target-triple x86_64-unknown-linux-musl || _failure "PyOxidizer build failed"
+            ;;
+    esac
+
+    mv "${oxidize_dir}/build" "${work_dir}/"
+
+    cd "${work_dir}" || _failure "Failed to change directory to ${work_dir}"
+    "${umu_bundler_dir}/create_self_extracting_exe.sh" || _failure "Failed to create self-extracting executable"
+    chmod +x umu-run
+
+    _message "Static umu-run built successfully"
+}
+
+_umu_standalone_finalize() {
+    mv "${umu_bundler_dir}/work/umu-run" "${umu_bundler_dir}/umu-run" || _failure "Failed to move umu-run to umu-bundler folder"
+
+    _message "umu-run has been built and moved to: ${umu_bundler_dir}/umu-run"
+    rm -rf "${umu_bundler_dir}/work"
+}
+##############################################
+# Installation
 ##############################################
 _install() {
-    cd "${builddir}" || _failure "Can't install because there is no build directory."
-
-    make install || _failure "make install didn't succeed"
+    rsync -a --delete "${builddir}/${buildname}/" "${HOME}/.steam/root/compatibilitytools.d/${buildname}/" ||
+        _failure "Couldn't copy ${builddir}/${buildname} to ${HOME}/.steam/root/compatibilitytools.d/${buildname}."
 
     _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${buildname}"
     _message "Along with the archive in the current directory"
@@ -178,22 +251,30 @@ _install() {
 # Source preparation
 ##############################################
 _sources() {
+    local components=("umu-launcher")
+    [ "$1" != "umu" ] && components+=("proton" "protonfixes")
+
     cd "${scriptdir}" || _failure "Couldn't change to script directory."
 
-    _repo_updater "proton" "${protonurl}" "${protontag}"
-
-    _repo_updater "protonfixes" "${umu_protonfixesurl}"
-
-    # Clean protonfixes from Proton and copy the new one
-    if [ -d "proton/protonfixes" ]; then rm -rf "proton/protonfixes"; fi
-    cp -r "protonfixes" "proton/protonfixes"
-
-    if [ "${_do_bundle_umu}" = "true" ]; then
-        _repo_updater "umu-launcher" "${umu_launcherurl}"
-    fi
+    for component in "${components[@]}"; do
+        case $component in
+            proton)
+                _repo_updater "proton" "${protonurl}" "${protontag}"
+                ;;
+            protonfixes)
+                _repo_updater "protonfixes" "${umu_protonfixesurl}"
+                [ -d "${srcdir}"/protonfixes ] && rm -rf "${srcdir}"/protonfixes
+                cp -r "${scriptdir}"/protonfixes "${srcdir}"/protonfixes
+                ;;
+            umu-launcher)
+                _repo_updater "umu-launcher" "${umu_launcherurl}"
+                ;;
+        esac
+    done
 
     _message "Sources are ready."
 }
+
 _repo_updater() {
     local repo_path="$1"
     local repo_url="$2"
@@ -280,39 +361,46 @@ _repo_updater() {
     cd "${scriptdir}" || _failure "Couldn't change directory back to script's directory (somehow.)"
 }
 ##############################################
-# Log messages
+# Terminal output
 ##############################################
 _message() {
-    if [ -n "$*" ]; then
-        echo -e '\033[1;34m'"Message:\033[0m $*"
-    else
-        echo ""
-    fi
+    [ -n "$*" ] && echo -e '\033[1;34m'"Message:\033[0m $*" || echo ""
 }
+
 _warning() {
-    if [ -n "$*" ]; then
-        echo -e '\033[1;33m'"Message:\033[0m $*"
-    else
-        echo ""
-    fi
+    [ -n "$*" ] && echo -e '\033[1;33m'"Warning:\033[0m $*" || echo ""
 }
+
 _failure() {
-    if [ -n "$*" ]; then echo -e '\033[1;31m'"Error:\033[0m $*"; fi
-    echo -e '\033[1;31m'"Exiting.\033[0m Run './setup.sh help' to see some available options."
+    [ -n "$*" ] && echo -e '\033[1;31m'"Error:\033[0m $*"
+    echo -e '\033[1;31m'"Exiting.\033[0m Run './setup.sh help' to see available options."
     exit 1
 }
+
 _help() {
-    _message "./setup.sh [help] [buildonly] [cleanbuild] [no-bundle-umu]"
+    _message "./setup.sh [options]"
+    echo ""
+    _message "Options:"
+    _message "  help         Show this help message"
+    _message "  buildonly    Only build without installing to the steam compatibility tools directory"
+    _message "  cleanbuild   Run 'make clean' in the build directory before 'make'"
+    _message "  no-bundle-umu Don't build and bundle umu-run with Proton"
+    _message "  umu-only     Only build the static umu-run self-extracting executable"
     echo ""
     _message "No arguments grabs sources, patches, builds, and installs"
-    _message "  Adding 'buildonly' will only build without installing to the steam compatibility tools directory"
-    _message "  Adding 'cleanbuild' just runs 'make clean' in the build directory before 'make'"
-    _message "  Adding 'no-bundle-umu' WON'T build the latest umu-launcher from master and place 'umu-run' in Proton's toplevel directory"
 
     exit 0
 }
+
+_print_config() {
+    _message "Build configuration:"
+    _message "  Build: ${_do_build}"
+    _message "  Install: ${_do_install}"
+    _message "  Bundle UMU: ${_do_bundle_umu}"
+    _message "  Clean Build: ${_do_cleanbuild}"
+    _message "  UMU Only: ${_do_umu_only}"
+}
 ##############################################
-# Parse arguments and run main function
+# Run
 ##############################################
-_parse_args "$@"
-_main
+_main "$@"

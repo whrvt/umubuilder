@@ -1,0 +1,8 @@
+umu-bundler/pyoxidizer_bootstrap_info.sh
+umu-bundler/prctl_helper
+umu-bundler/umu_version.json
+build/
+build_tarballs/
+proton/
+protonfixes/
+umu-launcher/
