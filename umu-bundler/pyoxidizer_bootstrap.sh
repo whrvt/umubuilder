@@ -1,10 +1,13 @@
 #!/bin/bash
 
-SENTINEL_FILE="pyoxidizer_bootstrap_info.sh"
+sentinel_file="./umu-bundler/util/pyoxidizer_bootstrap_info.sh"
+
+# Create the directory if it doesn't exist
+mkdir -p "$(dirname "$sentinel_file")"
 
 check_sentinel() {
-    if [ -f "$SENTINEL_FILE" ]; then
-        source "$SENTINEL_FILE"
+    if [ -f "$sentinel_file" ]; then
+        source "$sentinel_file"
         [ "$BOOTSTRAP_COMPLETE" = "true" ] && {
             echo "Bootstrap previously completed successfully. Skipping checks."
             return 0
@@ -14,9 +17,15 @@ check_sentinel() {
 }
 
 write_sentinel() {
-    echo "BOOTSTRAP_COMPLETE=true" > "$SENTINEL_FILE"
-    echo "PYOXIDIZER_INSTALL=$1" >> "$SENTINEL_FILE"
-    [ "$1" = "venv" ] && echo "PYOXIDIZER_VENV=$2" >> "$SENTINEL_FILE"
+    echo "BOOTSTRAP_COMPLETE=true" > "$sentinel_file"
+    echo "PYOXIDIZER_INSTALL=$1" >> "$sentinel_file"
+    [ "$1" = "venv" ] && echo "PYOXIDIZER_VENV=$2" >> "$sentinel_file"
+}
+
+write_sentinel() {
+    echo "BOOTSTRAP_COMPLETE=true" > "$sentinel_file"
+    echo "PYOXIDIZER_INSTALL=$1" >> "$sentinel_file"
+    [ "$1" = "venv" ] && echo "PYOXIDIZER_VENV=$2" >> "$sentinel_file"
 }
 
 install_pyoxidizer() {

@@ -22,7 +22,7 @@ _main() {
         _sources umu || _failure "Failed to prepare umu sources."
         _patch umu || _failure "Failed to apply umu patches."
         _build_umu_run || _failure "Building umu-run failed."
-        _umu_standalone_finalize
+        _message "umu-run has been built and is located at: ${scriptdir}/umu-build/umu-run"
     elif [ "${_do_build}" = "true" ]; then
         _sources || _failure "Failed to prepare sources."
         _patch proton wine umu || _failure "Failed to apply patches."
@@ -78,6 +78,7 @@ _dirsetup_initial() {
 
     umu_launcher_dir="${scriptdir}/umu-launcher" && export umu_launcher_dir
     umu_bundler_dir="${scriptdir}/umu-bundler" && export umu_bundler_dir
+    umu_build_dir="${scriptdir}/umu-build" && export umu_build_dir
 }
 ##############################################
 # Environment
@@ -153,6 +154,7 @@ _build() {
     }
 
     make -j1 redist || _failure "Build failed."
+
     if [ "${_do_bundle_umu}" = "true" ]; then
         _message "Starting static umu-run bundling procedure..."
         if ! _build_umu_run; then
@@ -160,8 +162,7 @@ _build() {
         else
             _message "Copying umu-run to build directory..."
             rm -rf "${builddir}/${buildname}/umu-run"
-            cp "${umu_bundler_dir}/work/umu-run" "${builddir}/${buildname}/umu-run" || _failure "Failed to copy umu-run to the final build directory."
-            rm -rf "${umu_bundler_dir}/work"
+            cp "${umu_build_dir}/umu-run" "${builddir}/${buildname}/umu-run" || _failure "Failed to copy umu-run to the final build directory."
         fi
         cd "${builddir}"
     fi
@@ -175,9 +176,13 @@ _build() {
 # Build a static umu-run redistributable
 ##############################################
 _build_umu_run() {
+    cd "${scriptdir}" || _failure "Failed to change to script directory."
+
     local oxidize_dir="${umu_launcher_dir}/oxidize"
     local work_dir="${umu_bundler_dir}/work"
-    local sentinel_file="${umu_bundler_dir}/pyoxidizer_bootstrap_info.sh"
+    local sentinel_file="${umu_bundler_dir}/util/pyoxidizer_bootstrap_info.sh"
+
+    mkdir -p "${umu_build_dir}"
 
     [ -f "$sentinel_file" ] && {
         source "$sentinel_file"
@@ -204,10 +209,7 @@ _build_umu_run() {
     make version || _failure "Failed to run make version for umu-launcher"
 
     mkdir -p "${oxidize_dir}"
-    cp "${umu_bundler_dir}/pyoxidizer.bzl" "${oxidize_dir}/"
-    if [ ! -x "${oxidize_dir}/prctl_helper" ]; then
-        cc -static -o "${oxidize_dir}/prctl_helper" "${umu_bundler_dir}/prctl_helper.c" || _failure "Failed to compile the required prctl_helper for umu."
-    fi
+    cp "${umu_bundler_dir}/util/pyoxidizer.bzl" "${oxidize_dir}/"
 
     cd "${oxidize_dir}" || _failure "Failed to change directory to ${oxidize_dir}"
 
@@ -222,19 +224,14 @@ _build_umu_run() {
             ;;
     esac
 
-    mv "${oxidize_dir}/build" "${work_dir}/"
-
-    cd "${work_dir}" || _failure "Failed to change directory to ${work_dir}"
-    "${umu_bundler_dir}/create_self_extracting_exe.sh" || _failure "Failed to create self-extracting executable"
-    chmod +x umu-run
+    # Create the self-extracting wrapper
+    "${umu_bundler_dir}/create_self_extracting_wrapper.sh" \
+        "${work_dir}" \
+        "${oxidize_dir}" \
+        "${umu_bundler_dir}" \
+        "${umu_build_dir}" || _failure "Failed to create self-extracting wrapper"
 
     _message "Static umu-run built successfully"
-}
-
-_umu_standalone_finalize() {
-    mv "${umu_bundler_dir}/work/umu-run" "${umu_bundler_dir}/umu-run" || _failure "Failed to move umu-run to umu-bundler folder"
-
-    _message "umu-run has been built and moved to: ${umu_bundler_dir}/umu-run"
     rm -rf "${umu_bundler_dir}/work"
 }
 ##############################################

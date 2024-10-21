@@ -18,7 +18,12 @@ import builtins
 
 executable_path = os.path.abspath(sys.executable)
 
-sys.argv[0] = os.path.basename(executable_path)
+# Keep the original argv[0]
+if len(sys.argv) > 0:
+    sys.argv[0] = os.path.basename(sys.argv[0])
+else:
+    sys.argv.insert(0, os.path.basename(executable_path))
+
 builtins.__file__ = executable_path
 sys.path.insert(0, os.path.dirname(executable_path))
 
@@ -29,7 +34,7 @@ sys.exit(main())
     python_config.sys_frozen = True
 
     exe = dist.to_python_executable(
-        name="umu-run",
+        name="umu-run-pyoxidizer",
         packaging_policy=policy,
         config=python_config,
     )
@@ -62,12 +67,12 @@ def make_install(exe):
     )
     files.add_file(umu_version_content, path="umu_version.json")
 
-    # Add the prctl helper to the install layout, so we don't rely on CDLL dynamic loading in umu-launcher
-    prctl_helper_content = FileContent(
-        path="./prctl_helper",
-        filename="prctl_helper"
-    )
-    files.add_file(prctl_helper_content, path="prctl_helper")
+    # # Add the prctl helper to the install layout, so we don't rely on CDLL dynamic loading in umu-launcher
+    # umu_run_wrapper_content = FileContent(
+    #     path="./umu-run",
+    #     filename="umu-run"
+    # )
+    # files.add_file(umu_run_wrapper_content, path="umu-run")
 
     return files
 

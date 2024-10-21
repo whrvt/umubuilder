@@ -1,6 +1,7 @@
-umu-bundler/pyoxidizer_bootstrap_info.sh
-umu-bundler/prctl_helper
-umu-bundler/umu_version.json
+umu-bundler/util/include
+umu-bundler/util/libarchive.a
+umu-bundler/util/pyoxidizer_bootstrap_info.sh
+umu-build/
 build/
 build_tarballs/
 proton/
