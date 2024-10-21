@@ -27,6 +27,7 @@ install_pyoxidizer() {
             echo "Failed to install PyOxidizer using pipx. Check your pipx installation and try again."
             return 1
         }
+        pipx ensurepath
         write_sentinel "pipx"
     elif command -v pip &> /dev/null; then
         if [ -z "$VIRTUAL_ENV" ]; then
