@@ -1,0 +1,24 @@
+diff --git a/Makefile.in b/Makefile.in
+index b82053d..84b82dc 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -27,7 +27,6 @@ endif
+ 
+ .PHONY: install
+ ifeq ($(USERINSTALL), xtrue)
+-SOURCE_DATE_EPOCH = $(shell LC_ALL=C date --date='@1580601600')
+ all: zipapp
+ install: zipapp-install
+ else
+@@ -183,9 +182,9 @@ $(OBJDIR)/.build-zipapp: | $(OBJDIR) version
+ 	. $(ZIPAPP_VENV)/bin/activate && python3 -m pip install -t "$(ZIPAPP_STAGING)" -U --no-compile .
+ 	install -Dm644 umu/umu_version.json "$(ZIPAPP_STAGING)"/umu/umu_version.json
+ 	cp umu/__main__.py "$(ZIPAPP_STAGING)"
+-	find "$(ZIPAPP_STAGING)" -exec touch -h -d "$(SOURCE_DATE_EPOCH)" {} +
++	find "$(ZIPAPP_STAGING)" -exec touch -h -d "2020-02-02 00:00:00" {} +
+ 	. $(ZIPAPP_VENV)/bin/activate && python3 -m zipapp $(ZIPAPP_STAGING) -o $(ZIPAPP) -p "$(PYTHON_INTERPRETER)" -c
+-	touch -d "$(SOURCE_DATE_EPOCH)" $(ZIPAPP)
++	touch -d "2020-02-02 00:00:00" $(ZIPAPP)
+ 	touch $(@)
+ 
+ .PHONY: zipapp

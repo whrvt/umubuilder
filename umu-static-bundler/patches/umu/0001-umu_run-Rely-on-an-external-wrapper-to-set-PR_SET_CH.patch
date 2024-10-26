@@ -1,0 +1,157 @@
+From eb37b4201f8874a74951f0147c967d38196ffd75 Mon Sep 17 00:00:00 2001
+From: umubuilder <proton@umu.builder>
+Date: Thu, 24 Oct 2024 17:40:24 -0700
+Subject: [PATCH] umu_run: Rely on an external wrapper to set
+ PR_SET_CHILD_SUBREAPER instead of relying on CDLL.
+
+This allows a fully statically linked umu-launcher to still have this prctl call.
+---
+ umu/umu_run.py  | 21 ++-------------------
+ umu/umu_test.py | 43 -------------------------------------------
+ umu/umu_util.py |  8 --------
+ 3 files changed, 2 insertions(+), 70 deletions(-)
+
+diff --git a/umu/umu_run.py b/umu/umu_run.py
+index 7e0c4da..8730534 100755
+--- a/umu/umu_run.py
++++ b/umu/umu_run.py
+@@ -5,11 +5,9 @@ import sys
+ import threading
+ import time
+ import zipfile
+-from _ctypes import CFuncPtr
+ from argparse import ArgumentParser, Namespace, RawTextHelpFormatter
+ from concurrent.futures import Future, ThreadPoolExecutor
+ from contextlib import suppress
+-from ctypes import CDLL, c_int, c_ulong
+ from errno import ENETUNREACH
+ 
+ try:
+@@ -45,7 +43,6 @@ from umu.umu_plugins import set_env_toml
+ from umu.umu_proton import get_umu_proton
+ from umu.umu_runtime import setup_umu
+ from umu.umu_util import (
+-    get_libc,
+     get_library_paths,
+     is_installed_verb,
+     is_winetricks_verb,
+@@ -681,12 +678,9 @@ def run_in_steammode(proc: Popen) -> int:
+ 
+ def run_command(command: tuple[Path | str, ...]) -> int:
+     """Run the executable using Proton within the Steam Runtime."""
+-    prctl: CFuncPtr
+     cwd: Path | str
+     proc: Popen
+     ret: int = 0
+-    prctl_ret: int = 0
+-    libc: str = get_libc()
+ 
+     is_gamescope_session: bool = (
+         os.environ.get("XDG_CURRENT_DESKTOP") == "gamescope"
+@@ -710,18 +704,6 @@ def run_command(command: tuple[Path | str, ...]) -> int:
+     else:
+         cwd = Path.cwd()
+ 
+-    prctl = CDLL(libc).prctl
+-    prctl.restype = c_int
+-    prctl.argtypes = [
+-        c_int,
+-        c_ulong,
+-        c_ulong,
+-        c_ulong,
+-        c_ulong,
+-    ]
+-    prctl_ret = prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0, 0)
+-    log.debug("prctl exited with status: %s", prctl_ret)
+-
+     with Popen(
+         command,
+         start_new_session=True,
+diff --git a/umu/umu_test.py b/umu/umu_test.py
+index a2bec26..6f3dffd 100644
+--- a/umu/umu_test.py
++++ b/umu/umu_test.py
+@@ -240,55 +240,12 @@ class TestGameLauncher(unittest.TestCase):
+             f"Expected {baselayer}, received {result}",
+         )
+ 
+-    def test_run_command(self):
+-        """Test run_command."""
+-        mock_exe = "foo"
+-        mock_command = (
+-            "/home/foo/.local/share/umu/umu",
+-            "--verb",
+-            "waitforexitandrun",
+-            "--",
+-            "/home/foo/.local/share/Steam/compatibilitytools.d/GE-Proton9-7/proton",
+-            mock_exe,
+-        )
+-        libc = umu_util.get_libc()
+-
+-        # Skip this test if libc is not found in system
+-        if not libc:
+-            return
+-
+-        os.environ["EXE"] = mock_exe
+-        with (
+-            patch.object(
+-                umu_run,
+-                "Popen",
+-            ) as mock_popen,
+-        ):
+-            mock_proc = MagicMock()
+-            mock_proc.__enter__.return_value = mock_proc
+-            mock_proc.wait.return_value = 0
+-            mock_proc.pid = 1234
+-            mock_popen.return_value = mock_proc
+-            result = umu_run.run_command(mock_command)
+-            mock_popen.assert_called_once()
+-            self.assertEqual(
+-                result,
+-                0,
+-                "Expected 0 status code",
+-            )
+-
+     def test_run_command_none(self):
+         """Test run_command when passed an empty tuple or None."""
+         with self.assertRaises(ValueError):
+             umu_run.run_command(())
+             umu_run.run_command(None)
+ 
+-    def test_get_libc(self):
+-        """Test get_libc."""
+-        self.assertIsInstance(
+-            umu_util.get_libc(), str, "Value is not a string"
+-        )
+-
+     def test_is_installed_verb_noverb(self):
+         """Test is_installed_verb when passed an empty verb."""
+         verb = []
+diff --git a/umu/umu_util.py b/umu/umu_util.py
+index c27c3fa..da5e155 100644
+--- a/umu/umu_util.py
++++ b/umu/umu_util.py
+@@ -1,6 +1,5 @@
+ import os
+ from contextlib import contextmanager
+-from ctypes.util import find_library
+ from functools import lru_cache
+ from http.client import HTTPSConnection
+ from pathlib import Path
+@@ -18,13 +17,6 @@ from umu.umu_log import log
+ 
+ ssl_context: SSLContext | None = None
+ 
+-
+-@lru_cache
+-def get_libc() -> str:
+-    """Find libc.so from the user's system."""
+-    return find_library("c") or ""
+-
+-
+ @lru_cache
+ def get_library_paths() -> set[str]:
+     """Find the shared library paths from the user's system."""
+-- 
+2.47.0
+

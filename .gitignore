@@ -1,10 +1,11 @@
-umu-bundler/util/include
-umu-bundler/util/libarchive.a
-umu-bundler/util/pyoxidizer_bootstrap_info.sh
-umu-bundler/util/musl-toolchain/
-umu-build/
+umu-static-bundler/third_party/
+umu-static-bundler/work/
+umu-static-bundler/build/
+garbage/
 build/
 build_tarballs/
 proton/
 protonfixes/
 umu-launcher/
+.vscode
+git-tracked-files.txt
