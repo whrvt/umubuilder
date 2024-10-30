@@ -1,113 +1,136 @@
 #!/bin/bash
 
-# Git repository management utilities
-# This module provides robust git repository handling with features like:
-# - Clean checkouts from specific refs
-# - Submodule handling
-# - Local build versioning tags
-# - Repository state verification
-# - Patching
-
 _repo_updater() {
     local repo_path="$1"
     local repo_url="$2"
     local specific_ref="${3:-}"
+    local timestamp
+    timestamp=$(date +%Y%m%d%H%M%S)
+
+    export GIT_COMMITTER_NAME="umubuilder"
+    export EMAIL="proton@umu.builder"
+
+    _configure_git() {
+        git config user.email "proton@umu.builder"
+        git config user.name "umubuilder"
+        git config advice.detachedHead false
+        git config commit.gpgsign false
+        git config core.compression 0
+        git config pack.compression 0
+        git config core.looseCompression 0
+        git config pack.window 0
+        git config pack.depth 0
+        git config pack.deltaCacheSize 1
+        git config pack.packSizeLimit 100m
+        git config fetch.unpackLimit 1
+        git config fetch.writeCommitGraph false
+        git config gc.auto 0
+        git config gc.autoDetach false
+        git config submodule.fetchJobs "$(nproc)"
+        git config protocol.version 2
+        git config core.excludesFile /dev/null
+    }
+
+    _message "Ensuring ${repo_path} is up-to-date"
+
+    # Handle initial clone if needed
     local is_new_clone=false
-
-    _message "Ensuring ${repo_path} is up-to-date."
-
     if [ ! -d "${repo_path}" ]; then
-        _message "Cloning ${repo_path}."
-        git clone --depth 1 "${repo_url}" "${repo_path}" ||
-            _failure "Couldn't clone the ${repo_path} repository."
+        _message "Cloning ${repo_url} to ${repo_path}."
+        GIT_CONFIG_COUNT=6 \
+            GIT_CONFIG_KEY_0="core.compression" GIT_CONFIG_VALUE_0="0" \
+            GIT_CONFIG_KEY_1="pack.compression" GIT_CONFIG_VALUE_1="0" \
+            GIT_CONFIG_KEY_2="core.looseCompression" GIT_CONFIG_VALUE_2="0" \
+            GIT_CONFIG_KEY_3="pack.window" GIT_CONFIG_VALUE_3="0" \
+            GIT_CONFIG_KEY_4="pack.depth" GIT_CONFIG_VALUE_4="0" \
+            GIT_CONFIG_KEY_5="pack.deltaCacheSize" GIT_CONFIG_VALUE_5="1" \
+            git -c protocol.version=2 clone --filter=blob:none --depth 1 --no-tags \
+            --single-branch "${repo_url}" "${repo_path}" || _failure "Clone failed."
         is_new_clone=true
     fi
 
-    cd "${repo_path}" || _failure "Couldn't change directory to ${repo_path}."
+    cd "${repo_path}" || _failure "Couldn't change to ${repo_path}."
 
-    # set a fake git config so it's not prompted
-    git config commit.gpgsign false &>/dev/null || true
-    git config user.email "proton@umu.builder" &>/dev/null || true
-    git config user.name "umubuilder" &>/dev/null || true
-    git config advice.detachedHead false &>/dev/null || true
+    # Minimal config just to avoid prompts
+    git config commit.gpgsign false
+    git config user.email "proton@umu.builder"
+    git config user.name "umubuilder"
+    git config advice.detachedHead false
 
-    local target_ref="${specific_ref:-origin/HEAD}"
-
-    # For unshallow fetching specific commits while keeping other fetches shallow
-    if [ -n "${specific_ref}" ] && [[ "${specific_ref}" =~ ^[0-9a-f]{5,40}$ ]]; then
-        # If it looks like a commit hash, deepen until we find it
-        local depth=1
-        while ! git cat-file -e "${specific_ref}^{commit}" 2>/dev/null; do
-            if [ ${depth} -gt 100 ]; then
-                _failure "Commit ${specific_ref} not found within reasonable history"
-            fi
-            _message "Deepening repository to find commit ${specific_ref}..."
-            depth=$((depth * 2))
-            git fetch --depth=${depth} origin || true
-        done
+    local target_ref="origin/HEAD"
+    if [ -n "${specific_ref}" ]; then
         target_ref="${specific_ref}"
-    else
-        git fetch --depth 1 origin
-        if [ -n "${specific_ref}" ]; then
+        # Quick fetch of specific ref
+        GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0="core.compression" GIT_CONFIG_VALUE_0="0" \
+            GIT_CONFIG_KEY_1="pack.compression" GIT_CONFIG_VALUE_1="0" \
             git fetch --depth 1 origin "${specific_ref}:refs/remotes/origin/${specific_ref}" || true
-        fi
     fi
 
-    # Check if the repository needs to be updated or cleaned
+    # Check if we need to do anything
     if [ "${is_new_clone}" = "true" ] || [ -n "$(git status --porcelain)" ] || [ "$(git rev-parse HEAD)" != "$(git rev-parse ${target_ref})" ]; then
-        _message "The ${repo_path} repository will be set to a clean state at ${target_ref}."
+        _message "Setting repository to clean state at ${target_ref}"
 
-        # Reset and clean the main repository
+        # Now do full configuration since we need to update
+        _configure_git
+
         git reset --hard
         git clean -ffdx
 
-        if [ -n "${specific_ref}" ]; then
-            if git cat-file -e "${specific_ref}^{commit}" 2>/dev/null; then
-                # Direct commit checkout
-                git checkout -f "${specific_ref}" &&
-                _message "Checked out ${repo_path} at commit ${specific_ref}."
-            elif git rev-parse "refs/tags/${specific_ref}" >/dev/null 2>&1; then
-                # Tag checkout
-                git checkout -f "${specific_ref}" &&
-                _message "Checked out ${repo_path} at tag ${specific_ref}."
-            else
-                # Branch checkout
-                git checkout -B "${specific_ref}" "origin/${specific_ref}" &&
-                _message "Checked out ${repo_path} at branch ${specific_ref}."
-            fi
+        # Handle checkout based on ref type
+        if git rev-parse "refs/tags/${target_ref}" >/dev/null 2>&1; then
+            git checkout -f "${target_ref}"
+        elif [ -n "${specific_ref}" ]; then
+            git checkout -B "${specific_ref}" "origin/${target_ref}"
         else
-            # Otherwise just reset to origin/HEAD
             git reset --hard origin/HEAD
         fi
 
-        # Keep submodules updated
+        # Handle submodules if present
         if [ -f ".gitmodules" ]; then
-            _message "Updating submodules for ${repo_path}."
-            git submodule update --init --depth 1 --recursive -f
+            _message "Updating submodules recursively"
+            git -c fetch.recurseSubmodules=false \
+                -c submodule.fetchJobs="$(nproc)" \
+                -c remote.origin.partialclonefilter=blob:none \
+                -c protocol.version=2 \
+                -c core.compression=0 \
+                -c pack.compression=0 \
+                submodule update --init --depth 1 --recursive --force --jobs="$(nproc)"
+
+            # Clean up any dirty submodules
             # shellcheck disable=SC2016
             git submodule foreach --recursive '
+                git config core.compression 0
+                git config pack.compression 0
+
                 if [ -n "$(git status --porcelain)" ]; then
                     git reset --hard
                     git clean -ffdx
                 fi
-            ' 2>/dev/null
-        fi
 
-        _message "Cleaned files from ${repo_path}"
+                # Tag submodule with same timestamp if it has content
+                if [ -n "$(git ls-files)" ]; then
+                    branch=$(git rev-parse --abbrev-ref HEAD)
+                    hash=$(git rev-parse HEAD)
+                    tag_name="local-${branch}-'"${timestamp}"'"
+                    git tag -a -f "${tag_name}" -m "Local build tag for ${branch} at '"${timestamp}"'" "${hash}"
+                    git checkout -q "${tag_name}"
+                fi
+            '
+        fi
     else
-        _message "The ${repo_path} repository is already up-to-date and clean."
+        _message "Repository already at correct revision and clean."
     fi
 
-    # Delete any old tags we made
+    # Handle local tagging for versioning
     git tag -l "local-*" | xargs -r git tag -d
-
-    # Create a new "fake" tag at the current position with a timestamp, so that proton/protonfixes/umu-launcher is happy when versioning the build
-    local timestamp=$(date +%Y%m%d%H%M%S)
-    local current_branch=$(git rev-parse --abbrev-ref HEAD)
-    local local_tag="local-${current_branch}-${timestamp}"
-    local commit_hash=$(git rev-parse HEAD)
-    git tag -a -f "${local_tag}" -m "Local build tag for ${current_branch} at ${timestamp}" "${commit_hash}"
-    _message "Created temporary tag ${local_tag} for ${repo_path} to use in versioning."
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    local tag_name="local-${current_branch}-${timestamp}"
+    local commit_hash
+    commit_hash=$(git rev-parse HEAD)
+    git tag -a -f "${tag_name}" -m "Local build tag for ${current_branch} at ${timestamp}" "${commit_hash}"
+    git checkout -q "${tag_name}"
 }
 
 # Apply patches to a target directory following a structured patch directory layout
@@ -121,7 +144,7 @@ _patch_dir() {
     local shortname
 
     [ ! -d "${target_dir}" ] && _failure "Target directory doesn't exist: ${target_dir}"
-    [ ! -d "${patch_dir}" ] && return 0  # No patches to apply is not an error
+    [ ! -d "${patch_dir}" ] && return 0 # No patches to apply is not an error
 
     cd "${target_dir}" || _failure "Failed to change to target directory: ${target_dir}"
 
@@ -149,9 +172,9 @@ _patch() {
     for subdir in "${@}"; do
         local target_dir
         case "${subdir}" in
-            proton) target_dir="${srcdir}" ;;
-            wine) target_dir="${srcdir}/${subdir}" ;;
-            *) _failure "Unknown patch target: ${subdir}" ;;
+        proton) target_dir="${srcdir}" ;;
+        wine) target_dir="${srcdir}/${subdir}" ;;
+        *) _failure "Unknown patch target: ${subdir}" ;;
         esac
 
         _patch_dir "${target_dir}" "${patchdir}/${subdir}" || return $?

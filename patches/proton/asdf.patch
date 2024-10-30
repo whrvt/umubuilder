@@ -1,0 +1,22 @@
+diff --git a/Makefile.in b/Makefile.in
+index c4d9d6e..999f0f9 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -658,8 +676,6 @@ $(eval $(call rules-cmake,vosk,64))
+ WINE_SOURCE_ARGS = \
+   --exclude configure \
+   --exclude autom4te.cache \
+-  --exclude include/config.h.in \
+-  --exclude include/config.h.ink \
+   --exclude include/wine/vulkan.h \
+   --exclude include/wine/vulkan_driver.h \
+   --exclude dlls/vulkan-1/vulkan-1.spec \
+@@ -669,11 +685,6 @@ WINE_SOURCE_ARGS = \
+   --exclude dlls/winevulkan/vulkan_thunks.h \
+   --exclude dlls/winevulkan/winevulkan.json \
+   --exclude dlls/winevulkan/winevulkan.spec \
+-  --exclude dlls/ntdll/ntsyscalls.h \
+-  --exclude dlls/win32u/win32syscalls.h \
+-  --exclude include/wine/server_protocol.h \
+-  --exclude server/request.h \
+-  --exclude server/trace.c \

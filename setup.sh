@@ -174,11 +174,12 @@ _sources() {
         case $component in
             proton)
                 _repo_updater "${scriptdir}/proton" "${protonurl}" "${protontag}"
+                rm -rf "${srcdir}/protonfixes" 2>/dev/null || true
                 ;;
             protonfixes)
                 _repo_updater "${scriptdir}/protonfixes" "${umu_protonfixesurl}"
                 [ -d "${srcdir}"/protonfixes ] && rm -rf "${srcdir}"/protonfixes
-                cp -r "${scriptdir}"/protonfixes "${srcdir}"/protonfixes
+                rsync -a --exclude='.git' --exclude='.git*' "${scriptdir}"/protonfixes "${srcdir}"/
                 ;;
         esac
     done
