@@ -3,7 +3,7 @@ A script for easily creating Proton packages, with custom patches and out-of-the
 
 With no added options, `./setup.sh` will download, compile, and bundle [Proton](https://github.com/GloriousEggroll/proton-ge-custom) + [protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) + [umu-run](https://github.com/Open-Wine-Components/umu-launcher) together into a redistributable `$pkgname.tar.xz` in a `build_tarballs` directory. It will also try to install these files to your `$HOME/.steam/root/compatibilitytools.d/`, with the `$buildname` as the compatibility tool's name.
 
-You can try making a static umu-launcher build by itself by running `./setup.sh umu-only`. It can also be used by itself from the `umu-static-bundler` directory, which will be turned into a submodule eventually, as I have plans of extending it to build static bundles for other (GPL-compatible) python apps as well.
+You can try making a static umu-launcher build by itself by running `./setup.sh umu-only`. This requires `docker-buildx` at the moment. It can also be used by itself from the `umu-static-bundler` directory, which will be turned into a submodule eventually, as I have plans of extending it to build static bundles for other (GPL-compatible) python apps as well.
 
 Run `./setup.sh help` to see an overview of the options.
 
