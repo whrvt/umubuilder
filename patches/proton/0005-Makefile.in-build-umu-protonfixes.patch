@@ -1,14 +1,52 @@
 diff --git a/Makefile.in b/Makefile.in
-index 16405fc..0c0818c 100644
+index c01116e5..4e5936c5 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -558,7 +558,8 @@ $(OBJ)/.build-protonfixes:
+@@ -41,7 +41,7 @@ DST_LIBDIR64 := $(DST_DIR)/lib64
+ DIST_PREFIX := $(DST_DIR)/share/default_pfx/
+ DIST_VERSION := $(DST_BASE)/version
+ DEPLOY_DIR := ./deploy
+-REDIST_DIR := ./redist
++REDIST_DIR := ./$(BUILD_NAME)
  
- $(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
- 	cd $(SRCDIR)/protonfixes && make install
--	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
+ ifneq ($(UNSTRIPPED_BUILD),)
+     STRIP :=
+@@ -545,6 +545,24 @@ $(DIST_WINEOPENXR_JSON64): $(WINEOPENXR_SRC)/wineopenxr64.json default_pfx
+ 
+ all-dist: $(DIST_WINEOPENXR_JSON64)
+ 
++##
++## protonfixes
++##
++
++PROTONFIXES_TARGET := $(addprefix $(DST_BASE)/,protonfixes)
++$(PROTONFIXES_TARGET): $(addprefix $(SRCDIR)/,protonfixes)
++
++$(OBJ)/.build-protonfixes:
++	cd $(SRCDIR)/protonfixes && make
++	touch $(@)
++
++$(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
++	cd $(SRCDIR)/protonfixes && make install
 +	rm -rf $(PROTONFIXES_TARGET)
 +	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
- 	rm -r $(SRCDIR)/protonfixes/dist
++	rm -r $(SRCDIR)/protonfixes/dist
++
++all-dist: $(PROTONFIXES_TARGET)
  
- all-dist: $(PROTONFIXES_TARGET)
+ ##
+ ## steam.exe
+@@ -1437,10 +1455,9 @@ redist: all
+ 	cp $(PROTONFIXES_TARGET)/cabextract $(REDIST_DIR)/files/bin/
+ 	cp $(PROTONFIXES_TARGET)/libmspack.so.0 $(REDIST_DIR)/files/lib64/
+ 	cp $(PROTONFIXES_TARGET)/libmspack.so.0.1.0 $(REDIST_DIR)/files/lib64/
+-	mv $(REDIST_DIR) $(BUILD_NAME)
+-	tar -cvzf $(BUILD_NAME).tar.gz $(BUILD_NAME)
+-	sha512sum $(BUILD_NAME).tar.gz > $(BUILD_NAME).sha512sum
+-	@echo "Proton build available at $(BUILD_NAME).tar.gz"
++	## tar -cvzf $(BUILD_NAME).tar.gz $(BUILD_NAME)
++	## sha512sum $(BUILD_NAME).tar.gz > $(BUILD_NAME).sha512sum
++	## @echo "Proton build available at $(BUILD_NAME).tar.gz"
+ 
+ ##
+ ## make module=$dllname module[32,64]

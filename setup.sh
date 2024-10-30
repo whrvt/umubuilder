@@ -1,11 +1,11 @@
 #!/bin/bash
 
-pkgver=9-7
+pkgver=9-8
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/GloriousEggroll/proton-ge-custom.git
-protontag=GE-Proton9-16
+protontag=GE-Proton9-7
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git

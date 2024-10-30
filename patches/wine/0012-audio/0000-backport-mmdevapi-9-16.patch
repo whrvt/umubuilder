@@ -1,0 +1,635 @@
+diff --git a/dlls/mmdevapi/audiosessionmanager.c b/dlls/mmdevapi/audiosessionmanager.c
+index 5486b3fa40c..ddc45423700 100644
+--- a/dlls/mmdevapi/audiosessionmanager.c
++++ b/dlls/mmdevapi/audiosessionmanager.c
+@@ -48,6 +48,133 @@ void sessions_unlock(void)
+     LeaveCriticalSection(&g_sessions_lock);
+ }
+ 
++struct session_enum
++{
++    IAudioSessionEnumerator IAudioSessionEnumerator_iface;
++    IMMDevice *device;
++    GUID *sessions;
++    int session_count;
++    LONG ref;
++};
++
++static struct session_enum *impl_from_IAudioSessionEnumerator(IAudioSessionEnumerator *iface)
++{
++    return CONTAINING_RECORD(iface, struct session_enum, IAudioSessionEnumerator_iface);
++}
++
++static HRESULT WINAPI enumerator_QueryInterface(IAudioSessionEnumerator *iface, REFIID riid, void **ppv)
++{
++    struct session_enum *enumerator = impl_from_IAudioSessionEnumerator(iface);
++
++    TRACE("(%p)->(%s, %p)\n", enumerator, debugstr_guid(riid), ppv);
++
++    if (!ppv)
++        return E_POINTER;
++
++    if (IsEqualIID(riid, &IID_IUnknown) ||
++        IsEqualIID(riid, &IID_IAudioSessionEnumerator))
++        *ppv = &enumerator->IAudioSessionEnumerator_iface;
++    else {
++        WARN("Unknown iface %s.\n", debugstr_guid(riid));
++        *ppv = NULL;
++        return E_NOINTERFACE;
++    }
++
++    IUnknown_AddRef((IUnknown *)*ppv);
++
++    return S_OK;
++}
++
++static ULONG WINAPI enumerator_AddRef(IAudioSessionEnumerator *iface)
++{
++    struct session_enum *enumerator = impl_from_IAudioSessionEnumerator(iface);
++    ULONG ref = InterlockedIncrement(&enumerator->ref);
++    TRACE("(%p) new ref %lu\n", enumerator, ref);
++    return ref;
++}
++
++static ULONG WINAPI enumerator_Release(IAudioSessionEnumerator *iface)
++{
++    struct session_enum *enumerator = impl_from_IAudioSessionEnumerator(iface);
++    ULONG ref = InterlockedDecrement(&enumerator->ref);
++    TRACE("(%p) new ref %lu\n", enumerator, ref);
++
++    if (!ref)
++    {
++        IMMDevice_Release(enumerator->device);
++        free(enumerator->sessions);
++        free(enumerator);
++    }
++
++    return ref;
++}
++
++static HRESULT WINAPI enumerator_GetCount(IAudioSessionEnumerator *iface, int *count)
++{
++    struct session_enum *enumerator = impl_from_IAudioSessionEnumerator(iface);
++
++    TRACE("%p -> %p.\n", iface, count);
++
++    if (!count) return E_POINTER;
++    *count = enumerator->session_count;
++    return S_OK;
++}
++
++static HRESULT WINAPI enumerator_GetSession(IAudioSessionEnumerator *iface, int index, IAudioSessionControl **session)
++{
++    struct session_enum *enumerator = impl_from_IAudioSessionEnumerator(iface);
++    struct audio_session_wrapper *session_wrapper;
++    HRESULT hr;
++
++    TRACE("%p -> %d %p.\n", iface, index, session);
++
++    if (!session) return E_POINTER;
++    if (index >= enumerator->session_count)
++        return E_FAIL;
++
++    *session = NULL;
++    sessions_lock();
++    hr = get_audio_session_wrapper(&enumerator->sessions[index], enumerator->device, &session_wrapper);
++    sessions_unlock();
++    if (FAILED(hr))
++        return hr;
++    *session = (IAudioSessionControl *)&session_wrapper->IAudioSessionControl2_iface;
++    return S_OK;
++}
++
++static const IAudioSessionEnumeratorVtbl IAudioSessionEnumerator_vtbl =
++{
++    enumerator_QueryInterface,
++    enumerator_AddRef,
++    enumerator_Release,
++    enumerator_GetCount,
++    enumerator_GetSession,
++};
++
++static HRESULT create_session_enumerator(IMMDevice *device, IAudioSessionEnumerator **ppv)
++{
++    struct session_enum *enumerator;
++    HRESULT hr;
++
++    if (!(enumerator = calloc(1, sizeof(*enumerator))))
++        return E_OUTOFMEMORY;
++
++    sessions_lock();
++    hr = get_audio_sessions(device, &enumerator->sessions, &enumerator->session_count);
++    sessions_unlock();
++    if (FAILED(hr))
++    {
++        free(enumerator);
++        return hr;
++    }
++    enumerator->IAudioSessionEnumerator_iface.lpVtbl = &IAudioSessionEnumerator_vtbl;
++    IMMDevice_AddRef(device);
++    enumerator->device = device;
++    enumerator->ref = 1;
++    *ppv = &enumerator->IAudioSessionEnumerator_iface;
++    return S_OK;
++}
++
+ static inline struct session_mgr *impl_from_IAudioSessionManager2(IAudioSessionManager2 *iface)
+ {
+     return CONTAINING_RECORD(iface, struct session_mgr, IAudioSessionManager2_iface);
+@@ -137,8 +264,10 @@ static HRESULT WINAPI ASM_GetSessionEnumerator(IAudioSessionManager2 *iface,
+                                                IAudioSessionEnumerator **out)
+ {
+     struct session_mgr *This = impl_from_IAudioSessionManager2(iface);
+-    FIXME("(%p)->(%p) - stub\n", This, out);
+-    return E_NOTIMPL;
++
++    TRACE("(%p)->(%p).\n", This, out);
++
++    return create_session_enumerator(This->device, out);
+ }
+ 
+ static HRESULT WINAPI ASM_RegisterSessionNotification(IAudioSessionManager2 *iface,
+diff --git a/dlls/mmdevapi/client.c b/dlls/mmdevapi/client.c
+index 0adb8bc5aa1..41a9655aa44 100644
+--- a/dlls/mmdevapi/client.c
++++ b/dlls/mmdevapi/client.c
+@@ -21,6 +21,9 @@
+ 
+ #define COBJMACROS
+ 
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++
+ #include <wchar.h>
+ 
+ #include <audiopolicy.h>
+@@ -89,9 +92,9 @@ static inline struct audio_client *impl_from_IAudioClock2(IAudioClock2 *iface)
+     return CONTAINING_RECORD(iface, struct audio_client, IAudioClock2_iface);
+ }
+ 
+-static inline ACImpl *impl_from_IAudioClockAdjustment(IAudioClockAdjustment *iface)
++static inline struct audio_client *impl_from_IAudioClockAdjustment(IAudioClockAdjustment *iface)
+ {
+-    return CONTAINING_RECORD(iface, ACImpl, IAudioClockAdjustment_iface);
++    return CONTAINING_RECORD(iface, struct audio_client, IAudioClockAdjustment_iface);
+ }
+ 
+ static inline struct audio_client *impl_from_IAudioRenderClient(IAudioRenderClient *iface)
+@@ -469,6 +472,7 @@ static ULONG WINAPI client_Release(IAudioClient3 *iface)
+         if (This->stream)
+             stream_release(This->stream, This->timer_thread);
+ 
++        free(This->device_name);
+         free(This);
+     }
+ 
+@@ -523,6 +527,42 @@ static HRESULT WINAPI client_Initialize(IAudioClient3 *iface, AUDCLNT_SHAREMODE
+         return params.result;
+     }
+ 
++    if (flags & AUDCLNT_STREAMFLAGS_LOOPBACK)
++    {
++        struct get_loopback_capture_device_params params;
++
++        if (This->dataflow != eRender)
++        {
++            sessions_unlock();
++            return AUDCLNT_E_WRONG_ENDPOINT_TYPE;
++        }
++
++        params.device = This->device_name;
++        params.name = name = get_application_name();
++        params.ret_device_len = 0;
++        params.ret_device = NULL;
++        params.result = E_NOTIMPL;
++        wine_unix_call(get_loopback_capture_device, &params);
++        while (params.result == STATUS_BUFFER_TOO_SMALL)
++        {
++            free(params.ret_device);
++            params.ret_device = malloc(params.ret_device_len);
++            wine_unix_call(get_loopback_capture_device, &params);
++        }
++        free(name);
++        if (FAILED(params.result))
++        {
++            sessions_unlock();
++            free(params.ret_device);
++            if (params.result == E_NOTIMPL)
++                FIXME("get_loopback_capture_device is not supported by backend.\n");
++            return params.result;
++        }
++        free(This->device_name);
++        This->device_name = params.ret_device;
++        This->dataflow = eCapture;
++    }
++
+     params.name = name   = get_application_name();
+     params.device        = This->device_name;
+     params.flow          = This->dataflow;
+@@ -864,6 +904,9 @@ static HRESULT WINAPI client_GetService(IAudioClient3 *iface, REFIID riid, void
+ 
+         if (!new_session)
+             IUnknown_AddRef((IUnknown *)*ppv);
++    } else if (IsEqualIID(riid, &IID_IAudioClockAdjustment)) {
++        IAudioClockAdjustment_AddRef(&This->IAudioClockAdjustment_iface);
++        *ppv = &This->IAudioClockAdjustment_iface;
+     } else {
+             FIXME("stub %s\n", debugstr_guid(riid));
+             hr = E_NOINTERFACE;
+@@ -1143,35 +1186,35 @@ const IAudioClock2Vtbl AudioClock2_Vtbl =
+ static HRESULT WINAPI AudioClockAdjustment_QueryInterface(IAudioClockAdjustment *iface,
+         REFIID riid, void **ppv)
+ {
+-    ACImpl *This = impl_from_IAudioClockAdjustment(iface);
+-    return IAudioClock_QueryInterface(&This->IAudioClock_iface, riid, ppv);
++    struct audio_client *This = impl_from_IAudioClockAdjustment(iface);
++    return IAudioClient3_QueryInterface(&This->IAudioClient3_iface, riid, ppv);
+ }
+ 
+ static ULONG WINAPI AudioClockAdjustment_AddRef(IAudioClockAdjustment *iface)
+ {
+-    ACImpl *This = impl_from_IAudioClockAdjustment(iface);
+-    return IAudioClient_AddRef((IAudioClient *)&This->IAudioClient3_iface);
++    struct audio_client *This = impl_from_IAudioClockAdjustment(iface);
++    return IAudioClient3_AddRef(&This->IAudioClient3_iface);
+ }
+ 
+ static ULONG WINAPI AudioClockAdjustment_Release(IAudioClockAdjustment *iface)
+ {
+-    ACImpl *This = impl_from_IAudioClockAdjustment(iface);
+-    return IAudioClient_Release((IAudioClient *)&This->IAudioClient3_iface);
++    struct audio_client *This = impl_from_IAudioClockAdjustment(iface);
++    return IAudioClient3_Release(&This->IAudioClient3_iface);
+ }
+ 
+-static HRESULT WINAPI AudioClockAdjustment_SetSampleRate(IAudioClockAdjustment *iface,
+-        float new_rate)
++static HRESULT WINAPI AudioClockAdjustment_SetSampleRate(IAudioClockAdjustment *iface, float rate)
+ {
+-    ACImpl *This = impl_from_IAudioClockAdjustment(iface);
++    struct audio_client *This = impl_from_IAudioClockAdjustment(iface);
+     struct set_sample_rate_params params;
+ 
+-    TRACE("(%p)->(%f)\n", This, new_rate);
++    TRACE("(%p)->(%f)\n", This, rate);
+ 
+     if (!This->stream)
+         return AUDCLNT_E_NOT_INITIALIZED;
+ 
+     params.stream = This->stream;
+-    params.new_rate = new_rate;
++    params.rate   = rate;
++    params.result = E_NOTIMPL;
+ 
+     wine_unix_call(set_sample_rate, &params);
+ 
+@@ -1443,7 +1486,6 @@ HRESULT AudioClient_Create(GUID *guid, IMMDevice *device, IAudioClient **out)
+     struct audio_client *This;
+     char *name;
+     EDataFlow dataflow;
+-    size_t size;
+     HRESULT hr;
+ 
+     TRACE("%s %p %p\n", debugstr_guid(guid), device, out);
+@@ -1458,29 +1500,28 @@ HRESULT AudioClient_Create(GUID *guid, IMMDevice *device, IAudioClient **out)
+         return E_UNEXPECTED;
+     }
+ 
+-    size = strlen(name) + 1;
+-    This = calloc(1, FIELD_OFFSET(struct audio_client, device_name[size]));
++    This = calloc(1, sizeof(*This));
+     if (!This) {
+         free(name);
+         return E_OUTOFMEMORY;
+     }
+ 
+-    memcpy(This->device_name, name, size);
+-    free(name);
++    This->device_name = name;
+ 
+-    This->IAudioCaptureClient_iface.lpVtbl = &AudioCaptureClient_Vtbl;
+-    This->IAudioClient3_iface.lpVtbl       = &AudioClient3_Vtbl;
+-    This->IAudioClock_iface.lpVtbl         = &AudioClock_Vtbl;
+-    This->IAudioClock2_iface.lpVtbl        = &AudioClock2_Vtbl;
++    This->IAudioCaptureClient_iface.lpVtbl   = &AudioCaptureClient_Vtbl;
++    This->IAudioClient3_iface.lpVtbl         = &AudioClient3_Vtbl;
++    This->IAudioClock_iface.lpVtbl           = &AudioClock_Vtbl;
++    This->IAudioClock2_iface.lpVtbl          = &AudioClock2_Vtbl;
+     This->IAudioClockAdjustment_iface.lpVtbl = &AudioClockAdjustment_Vtbl;
+-    This->IAudioRenderClient_iface.lpVtbl  = &AudioRenderClient_Vtbl;
+-    This->IAudioStreamVolume_iface.lpVtbl  = &AudioStreamVolume_Vtbl;
++    This->IAudioRenderClient_iface.lpVtbl    = &AudioRenderClient_Vtbl;
++    This->IAudioStreamVolume_iface.lpVtbl    = &AudioStreamVolume_Vtbl;
+ 
+     This->dataflow = dataflow;
+     This->parent   = device;
+ 
+     hr = CoCreateFreeThreadedMarshaler((IUnknown *)&This->IAudioClient3_iface, &This->marshal);
+     if (FAILED(hr)) {
++        free(This->device_name);
+         free(This);
+         return hr;
+     }
+diff --git a/dlls/mmdevapi/mmdevapi_private.h b/dlls/mmdevapi/mmdevapi_private.h
+index 5ef19ffc0d1..ab6e42eb1c5 100644
+--- a/dlls/mmdevapi/mmdevapi_private.h
++++ b/dlls/mmdevapi/mmdevapi_private.h
+@@ -80,3 +80,5 @@ extern HRESULT load_driver_devices(EDataFlow flow);
+ extern void main_loop_stop(void);
+ 
+ extern const WCHAR drv_keyW[];
++
++extern HRESULT get_audio_sessions(IMMDevice *device, GUID **ret, int *ret_count);
+diff --git a/dlls/mmdevapi/mmdevdrv.h b/dlls/mmdevapi/mmdevdrv.h
+index 004de87f11c..cf6064a0da2 100644
+--- a/dlls/mmdevapi/mmdevdrv.h
++++ b/dlls/mmdevapi/mmdevdrv.h
+@@ -79,7 +79,5 @@ struct audio_client {
+     struct audio_session_wrapper *session_wrapper;
+ 
+     struct list entry;
+-
+-    /* Keep at end */
+-    char device_name[0];
++    char *device_name;
+ };
+diff --git a/dlls/mmdevapi/session.c b/dlls/mmdevapi/session.c
+index 9a36adb5bf2..5288f1fb27f 100644
+--- a/dlls/mmdevapi/session.c
++++ b/dlls/mmdevapi/session.c
+@@ -664,3 +664,26 @@ HRESULT get_audio_session_wrapper(const GUID *guid, IMMDevice *device,
+ 
+     return S_OK;
+ }
++
++HRESULT get_audio_sessions(IMMDevice *device, GUID **ret, int *ret_count)
++{
++    struct audio_session *session;
++
++    *ret_count = 0;
++    *ret = NULL;
++    LIST_FOR_EACH_ENTRY(session, &sessions, struct audio_session, entry) {
++        if (session->device == device)
++            ++*ret_count;
++    }
++    if (!*ret_count)
++        return S_OK;
++
++    if (!(*ret = malloc(*ret_count * sizeof(**ret))))
++        return E_OUTOFMEMORY;
++    *ret_count = 0;
++    LIST_FOR_EACH_ENTRY(session, &sessions, struct audio_session, entry) {
++        if (session->device == device)
++            (*ret)[(*ret_count)++] = session->guid;
++    }
++    return S_OK;
++}
+diff --git a/dlls/mmdevapi/tests/render.c b/dlls/mmdevapi/tests/render.c
+index 8e000f03acb..18c8f10ba33 100644
+--- a/dlls/mmdevapi/tests/render.c
++++ b/dlls/mmdevapi/tests/render.c
+@@ -135,7 +135,9 @@ static void test_audioclient(void)
+     IAudioClient *ac;
+     IAudioClient2 *ac2;
+     IAudioClient3 *ac3;
++    IAudioClock *acl;
+     IUnknown *unk;
++    IAudioClockAdjustment *aca;
+     HRESULT hr;
+     ULONG ref;
+     WAVEFORMATEX *pwfx, *pwfx2;
+@@ -191,6 +193,18 @@ static void test_audioclient(void)
+         ref = IUnknown_Release(unk);
+         ok(ref == 1, "Released count is %lu\n", ref);
+     }
++    hr = IAudioClient_QueryInterface(ac, &IID_IAudioClock, (void**)&acl);
++    ok(hr == E_NOINTERFACE, "QueryInterface(IID_IAudioClock) returned %08lx\n", hr);
++
++    hr = IAudioClient_QueryInterface(ac, &IID_IAudioClockAdjustment, (void**)&aca);
++    ok(hr == S_OK, "QueryInterface(IID_IAudioClockAdjustment) returned %08lx\n", hr);
++    if (aca)
++    {
++        hr = IAudioClockAdjustment_QueryInterface(aca, &IID_IAudioClock, (void**)&acl);
++        ok(hr == E_NOINTERFACE, "QueryInterface(IID_IAudioClock) returned %08lx\n", hr);
++        ref = IAudioClockAdjustment_Release(aca);
++        ok(ref == 1, "Released count is %lu\n", ref);
++    }
+ 
+     hr = IAudioClient_GetDevicePeriod(ac, NULL, NULL);
+     ok(hr == E_POINTER, "Invalid GetDevicePeriod call returns %08lx\n", hr);
+@@ -564,8 +578,9 @@ static void test_formats(AUDCLNT_SHAREMODE mode)
+ 
+ static void test_references(void)
+ {
+-    IAudioClient *ac;
++    IAudioClient *ac, *ac2;
+     IAudioRenderClient *rc;
++    IAudioClockAdjustment *aca;
+     ISimpleAudioVolume *sav;
+     IAudioStreamVolume *asv;
+     IAudioClock *acl;
+@@ -606,6 +621,58 @@ static void test_references(void)
+     ref = IAudioRenderClient_Release(rc);
+     ok(ref == 0, "RenderClient_Release gave wrong refcount: %lu\n", ref);
+ 
++    /* IAudioClockAdjustment */
++    hr = IMMDevice_Activate(dev, &IID_IAudioClient, CLSCTX_INPROC_SERVER,
++            NULL, (void**)&ac);
++    ok(hr == S_OK, "Activation failed with %08lx\n", hr);
++    if(hr != S_OK)
++        return;
++
++    hr = IAudioClient_GetMixFormat(ac, &pwfx);
++    ok(hr == S_OK, "GetMixFormat failed: %08lx\n", hr);
++
++    hr = IAudioClient_Initialize(ac, AUDCLNT_SHAREMODE_SHARED, 0, 5000000,
++            0, pwfx, NULL);
++    ok(hr == S_OK, "Initialize failed: %08lx\n", hr);
++
++    CoTaskMemFree(pwfx);
++
++    hr = IAudioClient_GetService(ac, &IID_IAudioClockAdjustment, (void**)&aca);
++    todo_wine ok(hr == E_INVALIDARG, "IAudioClient_GetService(IID_IAudioClockAdjustment) returned %08lx\n", hr);
++
++    if (hr == S_OK) {
++        ref = IAudioClockAdjustment_Release(aca);
++        ok(ref == 1, "AudioClockAdjustment_Release gave wrong refcount: %lu\n", ref);
++    }
++
++    ref = IAudioClient_Release(ac);
++    ok(ref == 0, "Client_Release gave wrong refcount: %lu\n", ref);
++
++    /* IAudioClockAdjustment */
++    hr = IMMDevice_Activate(dev, &IID_IAudioClient, CLSCTX_INPROC_SERVER,
++            NULL, (void**)&ac);
++    ok(hr == S_OK, "Activation failed with %08lx\n", hr);
++    if(hr != S_OK)
++        return;
++
++    hr = IAudioClient_GetMixFormat(ac, &pwfx);
++    ok(hr == S_OK, "GetMixFormat failed: %08lx\n", hr);
++
++    hr = IAudioClient_Initialize(ac, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_RATEADJUST, 5000000,
++            0, pwfx, NULL);
++    ok(hr == S_OK, "Initialize failed: %08lx\n", hr);
++
++    CoTaskMemFree(pwfx);
++
++    hr = IAudioClient_GetService(ac, &IID_IAudioClockAdjustment, (void**)&aca);
++    ok(hr == S_OK, "IAudioClient_GetService(IID_IAudioClockAdjustment) returned %08lx\n", hr);
++    ref = IAudioClockAdjustment_Release(aca);
++    ok(ref == 1, "AudioClockAdjustment_Release gave wrong refcount: %lu\n", ref);
++
++    ref = IAudioClient_Release(ac);
++    ok(ref == 0, "Client_Release gave wrong refcount: %lu\n", ref);
++
++
+     /* ISimpleAudioVolume */
+     hr = IMMDevice_Activate(dev, &IID_IAudioClient, CLSCTX_INPROC_SERVER,
+             NULL, (void**)&ac);
+@@ -658,6 +725,9 @@ static void test_references(void)
+     ref = IAudioClock_Release(acl);
+     ok(ref != 0, "AudioClock_Release gave wrong refcount: %lu\n", ref);
+ 
++    hr = IAudioClock_QueryInterface(acl, &IID_IAudioClient, (void**)&ac2);
++    ok(hr == E_NOINTERFACE, "QueryInterface(IID_IAudioClient) returned %08lx\n", hr);
++
+     ref = IAudioClient_Release(ac);
+     ok(ref != 0, "Client_Release gave wrong refcount: %lu\n", ref);
+ 
+@@ -2028,12 +2098,18 @@ static void test_session_creation(void)
+ {
+     IMMDevice *cap_dev;
+     IAudioClient *ac;
++    IAudioSessionEnumerator *sess_enum, *sess_enum2;
++    IAudioSessionManager2 *sesm2;
+     IAudioSessionManager *sesm;
+     ISimpleAudioVolume *sav;
+-    GUID session_guid;
++    GUID session_guid, session_guid2;
++    BOOL found_first, found_second;
++    IAudioSessionControl *ctl;
+     float vol;
+     HRESULT hr;
+     WAVEFORMATEX *fmt;
++    int i, count;
++    WCHAR *name;
+ 
+     CoCreateGuid(&session_guid);
+ 
+@@ -2049,9 +2125,78 @@ static void test_session_creation(void)
+     hr = ISimpleAudioVolume_SetMasterVolume(sav, 0.6f, NULL);
+     ok(hr == S_OK, "SetMasterVolume failed: %08lx\n", hr);
+ 
++    hr = IAudioSessionManager_GetAudioSessionControl(sesm, &session_guid, 0, &ctl);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    hr = IAudioSessionControl_SetDisplayName(ctl, L"test_session1", NULL);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    IAudioSessionControl_Release(ctl);
++
++    hr = IAudioSessionManager_QueryInterface(sesm, &IID_IAudioSessionManager2, (void **)&sesm2);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    hr = IAudioSessionManager2_GetSessionEnumerator((void *)sesm2, &sess_enum);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++
++    /* create another session after getting the first enumerarot. */
++    CoCreateGuid(&session_guid2);
++    hr = IAudioSessionManager_GetAudioSessionControl(sesm, &session_guid2, 0, &ctl);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    hr = IAudioSessionControl_SetDisplayName(ctl, L"test_session2", NULL);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    IAudioSessionControl_Release(ctl);
++
++    hr = IAudioSessionManager2_GetSessionEnumerator(sesm2, &sess_enum2);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    ok(sess_enum != sess_enum2, "got the same interface.\n");
++
++    hr = IAudioSessionEnumerator_GetCount(sess_enum, &count);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    ok(count, "got %d.\n", count);
++    found_first = found_second = FALSE;
++    for (i = 0; i < count; ++i)
++    {
++        hr = IAudioSessionEnumerator_GetSession(sess_enum, i, &ctl);
++        ok(hr == S_OK, "got %#lx.\n", hr);
++        hr = IAudioSessionControl_GetDisplayName(ctl, &name);
++        ok(hr == S_OK, "got %#lx.\n", hr);
++        if (!wcscmp(name, L"test_session1"))
++            found_first = TRUE;
++        if (!wcscmp(name, L"test_session2"))
++            found_second = TRUE;
++        CoTaskMemFree(name);
++        IAudioSessionControl_Release(ctl);
++    }
++    ok(found_first && !found_second, "got %d, %d.\n", found_first, found_second);
++    if (0)
++    {
++        /* random access violation on Win11. */
++        IAudioSessionEnumerator_GetSession(sess_enum, count, &ctl);
++    }
++
++    hr = IAudioSessionEnumerator_GetCount(sess_enum2, &count);
++    ok(hr == S_OK, "got %#lx.\n", hr);
++    ok(count, "got %d.\n", count);
++    found_first = found_second = FALSE;
++    for (i = 0; i < count; ++i)
++    {
++        hr = IAudioSessionEnumerator_GetSession(sess_enum2, i, &ctl);
++        ok(hr == S_OK, "got %#lx.\n", hr);
++        hr = IAudioSessionControl_GetDisplayName(ctl, &name);
++        ok(hr == S_OK, "got %#lx.\n", hr);
++        if (!wcscmp(name, L"test_session1"))
++            found_first = TRUE;
++        if (!wcscmp(name, L"test_session2"))
++            found_second = TRUE;
++        CoTaskMemFree(name);
++        IAudioSessionControl_Release(ctl);
++    }
++    ok(found_first && found_second, "got %d, %d.\n", found_first, found_second);
++    IAudioSessionEnumerator_Release(sess_enum);
++    IAudioSessionEnumerator_Release(sess_enum2);
++
+     /* Release completely to show session persistence */
+     ISimpleAudioVolume_Release(sav);
+     IAudioSessionManager_Release(sesm);
++    IAudioSessionManager2_Release(sesm2);
+ 
+     /* test if we can create a capture audioclient in the session we just
+      * created from a SessionManager derived from a render device */
+diff --git a/dlls/mmdevapi/unixlib.h b/dlls/mmdevapi/unixlib.h
+index 2b29f6441ce..097b129f564 100644
+--- a/dlls/mmdevapi/unixlib.h
++++ b/dlls/mmdevapi/unixlib.h
+@@ -140,6 +140,15 @@ struct is_format_supported_params
+     HRESULT result;
+ };
+ 
++struct get_loopback_capture_device_params
++{
++    const WCHAR *name;
++    const char *device;
++    char *ret_device;
++    UINT32 ret_device_len;
++    HRESULT result;
++};
++
+ struct get_mix_format_params
+ {
+     const char *device;
+@@ -219,7 +228,7 @@ struct set_event_handle_params
+ struct set_sample_rate_params
+ {
+     stream_handle stream;
+-    float new_rate;
++    float rate;
+     HRESULT result;
+ };
+ 
+@@ -320,6 +329,7 @@ enum unix_funcs
+     get_capture_buffer,
+     release_capture_buffer,
+     is_format_supported,
++    get_loopback_capture_device,
+     get_mix_format,
+     get_device_period,
+     get_buffer_size,
