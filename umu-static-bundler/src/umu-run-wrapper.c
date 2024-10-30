@@ -263,8 +263,8 @@ static int setup_python_environment(const char *base_dir) {
     /* Set required environment variables */
     snprintf(python_path, sizeof(python_path), "%s/python/bin/python3", base_dir);
     if (setenv("PATH", path_env, 1) != 0 ||
-        setenv("PYTHONEXECUTABLE", python_path, 1) != 0) ||
-        unsetenv("UMU_RUNTIME_UPDATE") {
+        setenv("PYTHONEXECUTABLE", python_path, 1) != 0 ||
+        unsetenv("UMU_RUNTIME_UPDATE") != 0) {
         perror("Failed to set environment variables");
         return WRP_ERROR;
     }
