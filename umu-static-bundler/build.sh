@@ -189,7 +189,7 @@ build_docker_image() {
     fi
 
     _message "Building Docker image..."
-    docker build -t "${docker_image}" -f "${u_scriptdir}/lib/Dockerfile" "${docker_context}" || {
+    docker build --progress=plain -t "${docker_image}" -f "${u_scriptdir}/lib/Dockerfile" "${docker_context}" || {
         local ret=$?
         _error "Docker build failed"
         rm -rf "${docker_context}"

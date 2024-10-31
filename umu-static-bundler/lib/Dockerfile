@@ -34,7 +34,9 @@ RUN CC=clang \
     install -Dm644 libzstd.pc /usr/local/lib/pkgconfig/libzstd.pc && \
     cd .. && \
     install -Dm644 lib/libzstd.a /usr/local/lib/libzstd.a && \
-    find lib -name "zstd*.h" -exec install -Dm644 {} /usr/local/include/{} \; && \
+    install -Dm644 lib/zstd.h /usr/local/include/zstd.h && \
+    install -Dm644 lib/zdict.h /usr/local/include/zdict.h && \
+    install -Dm644 lib/zstd_errors.h /usr/local/include/zstd_errors.h && \
     install -Dm755 programs/zstd /usr/local/bin/zstd && \
     ln -sf /usr/local/bin/zstd /usr/local/bin/zstdmt && \
     ln -sf /usr/local/bin/zstd /usr/local/bin/unzstd
@@ -44,7 +46,7 @@ WORKDIR /build/libarchive
 COPY libarchive .
 RUN CPPFLAGS="-I/usr/local/include" \
     CFLAGS="-static -Oz -fPIC -ffunction-sections -fdata-sections" \
-    LDFLAGS="-static -Wl,--gc-sections,--strip-all -L/usr/local/lib" \
+    LDFLAGS="-static -Wl,--gc-sections,--strip-all -L/usr/local/lib -l:libzstd.a" \
     PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" \
     autoreconf -fi && \
     ./configure \

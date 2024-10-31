@@ -47,7 +47,9 @@ if ! clang -static \
     -o "${WORK_DIR}/umu-run" "${WRAPPER_SRC}" \
     -I/usr/local/include \
     -L/usr/local/lib \
+    -Wl,--whole-archive \
     -l:libarchive.a \
+    -Wl,--no-whole-archive \
     -l:libzstd.a \
     -pthread; then
     _error "Failed to compile wrapper"
