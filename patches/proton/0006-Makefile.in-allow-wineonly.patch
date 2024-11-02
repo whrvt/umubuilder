@@ -1,0 +1,26 @@
+diff --git a/Makefile.in b/Makefile.in
+index eb2c792..ebf25bc 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -1363,6 +1363,21 @@ module64: | all-source wine-configure64
+ module: | all-source wine-configure
+ module: module32 module64
+ 
++##
++## make wineonly[32,64]
++##
++
++.PHONY: wineonly32 wineonly64 wineonly
++
++wineonly32: | all-source wine-configure32
++	+$(BEAR) $(MAKE) -j$(J) $(filter -j%,$(MAKEFLAGS)) $(MFLAGS) $(MAKEOVERRIDES) -C $(WINE_OBJ32)
++
++wineonly64: | all-source wine-configure64
++	+$(BEAR) $(MAKE) -j$(J) $(filter -j%,$(MAKEFLAGS)) $(MFLAGS) $(MAKEOVERRIDES) -C $(WINE_OBJ64)
++
++wineonly: | all-source wine-configure
++wineonly: wineonly32 wineonly64
++
+ ###############################
+ else # outside of the container
+ ###############################

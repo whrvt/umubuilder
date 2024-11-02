@@ -127,31 +127,3 @@ index a2bec26..6f3dffd 100644
      def test_is_installed_verb_noverb(self):
          """Test is_installed_verb when passed an empty verb."""
          verb = []
-diff --git a/umu/umu_util.py b/umu/umu_util.py
-index c27c3fa..da5e155 100644
---- a/umu/umu_util.py
-+++ b/umu/umu_util.py
-@@ -1,6 +1,5 @@
- import os
- from contextlib import contextmanager
--from ctypes.util import find_library
- from functools import lru_cache
- from http.client import HTTPSConnection
- from pathlib import Path
-@@ -18,13 +17,6 @@ from umu.umu_log import log
- 
- ssl_context: SSLContext | None = None
- 
--
--@lru_cache
--def get_libc() -> str:
--    """Find libc.so from the user's system."""
--    return find_library("c") or ""
--
--
- @lru_cache
- def get_library_paths() -> set[str]:
-     """Find the shared library paths from the user's system."""
--- 
-2.47.0
-

@@ -3,44 +3,50 @@
 set -euo pipefail
 
 # Base directory setup
-readonly u_scriptdir="$(realpath "$(dirname "$0")")"
-readonly third_party_dir="${u_scriptdir}/third_party"
-readonly u_work_dir="${u_scriptdir}/work"
-readonly u_build_dir="${u_scriptdir}/build"
-readonly u_patches_dir="${u_scriptdir}/patches"
-readonly cache_dir="${third_party_dir}/cache"
-readonly cache_state="${cache_dir}/build_state.txt"
+readonly SCRIPT_DIR="$(realpath "$(dirname "$0")")"
+readonly PROJECT_ROOT="${SCRIPT_DIR}"
 
-readonly python_version="3.13.0"
-readonly static_python_url="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-${python_version}+20241016-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+# Project structure
+readonly BUILDER_DIR="${PROJECT_ROOT}/builder"
+readonly WRAPPER_DIR="${PROJECT_ROOT}/wrapper"
+readonly THIRD_PARTY_DIR="${PROJECT_ROOT}/third_party"
+readonly PATCHES_DIR="${PROJECT_ROOT}/patches"
 
-readonly libarchive_version="3.7.7"
-readonly libarchive_url="https://github.com/libarchive/libarchive/releases/download/v${libarchive_version}/libarchive-${libarchive_version}.tar.gz"
-readonly zstd_version="1.5.6"
-readonly zstd_url="https://github.com/facebook/zstd/releases/download/v${zstd_version}/zstd-${zstd_version}.tar.zst"
-readonly umu_launcher_url="https://github.com/Open-Wine-Components/umu-launcher.git"
+# Build artifacts and caching
+readonly WORK_DIR="${PROJECT_ROOT}/work"
+readonly BUILD_DIR="${PROJECT_ROOT}/build"
+readonly CACHE_DIR="${THIRD_PARTY_DIR}/cache"
+readonly CACHE_STATE="${CACHE_DIR}/build_state.txt"
+readonly DOCKER_IMAGE="umu-static-builder:latest"
 
-readonly docker_image="umu-static-builder:latest"
+# Import utilities
+source "${PROJECT_ROOT}/lib/messaging.sh"
+source "${PROJECT_ROOT}/lib/git-utils.sh"
 
-source "${u_scriptdir}/lib/messaging.sh"
-source "${u_scriptdir}/lib/git-utils.sh"
-source "${u_scriptdir}/lib/python-cleanup.sh"
+# Source versions
+readonly PYTHON_VERSION="3.13.0"
+readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-${PYTHON_VERSION}+20241016-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+readonly LIBARCHIVE_VERSION="3.7.7"
+readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
+readonly ZSTD_VERSION="1.5.6"
+readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
+readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
 
 parse_args() {
-    u_clean_build=false
-    u_skip_docker_build=false
-    u_keep_work=false
+    local clean_build=false
+    local skip_docker_build=false
+    local keep_work=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             clean)
-                u_clean_build=true
+                clean_build=true
                 ;;
             skip-docker-build)
-                u_skip_docker_build=true
+                skip_docker_build=true
                 ;;
             keep-work)
-                u_keep_work=true
+                keep_work=true
                 ;;
             help)
                 show_help
@@ -55,146 +61,200 @@ parse_args() {
         shift
     done
 
-    export u_clean_build u_skip_docker_build u_keep_work
+    echo "${clean_build}:${skip_docker_build}:${keep_work}"
 }
 
 show_help() {
-    _message "Usage: $0 [options]"
-    _message ""
-    _message "Build a static umu-run executable bundled with Python"
-    _message ""
-    _message "Options:"
-    _message "  clean           Clean all build artifacts before building"
-    _message "  skip-docker-build Skip rebuilding the Docker image"
-    _message "  keep-work      Keep work directory after successful build"
-    _message "  help           Show this help message"
+    cat << EOF
+Usage: $0 [options]
+
+Build a static executable bundled with Python
+
+Options:
+  clean           Clean all build artifacts before building
+  skip-docker-build Skip rebuilding the Docker image
+  keep-work      Keep work directory after successful build
+  help           Show this help message
+EOF
 }
 
 prepare_directories() {
-    if [[ "${u_clean_build}" == "true" ]]; then
+    local clean_build="$1"
+
+    if [[ "${clean_build}" == "true" ]]; then
         _message "Cleaning build environment..."
-        rm -rf "${u_build_dir}"
+        rm -rf "${BUILD_DIR}"
     fi
 
-    rm -rf "${u_work_dir}"
-    mkdir -p "${u_work_dir}" "${u_build_dir}" "${cache_dir}"
+    rm -rf "${WORK_DIR}"
+    mkdir -p "${WORK_DIR}" "${BUILD_DIR}" "${CACHE_DIR}"
 }
 
 cached_download() {
     local url="$1"
     local output="$2"
-    local cache_file="${third_party_dir}/cache/$(basename "${url}")"
+    local cache_file="${CACHE_DIR}/$(basename "${url}")"
+    local tmp_file="${cache_file}.tmp"
 
     if [[ -f "${output}" ]]; then
         _message "Using cached $(basename "${url}")"
-    else
-        _message "Downloading $(basename "${url}")..."
-        curl -L "${url}" -o "${cache_file}"
-        if [[ ! -f "${output}" ]]; then # Messy...
-            mv "${cache_file}" "${output}"
-        fi
+        return 0
+    fi
+
+    _message "Downloading $(basename "${url}")..."
+    if ! curl -L "${url}" -o "${tmp_file}"; then
+        rm -f "${tmp_file}"
+        _error "Failed to download $(basename "${url}")"
+        return 1
+    fi
+
+    # Atomic move to prevent partial downloads
+    mv "${tmp_file}" "${cache_file}"
+
+    # Only copy if target doesn't exist (handles race conditions)
+    if [[ ! -f "${output}" ]]; then
+        cp "${cache_file}" "${output}"
     fi
 }
 
-# Try not to do unnecessary work if nothing changed, useful if called from umubuilder's setup.sh
 _check_cache_state() {
     local current_state
 
+    # Add build configuration to cache state
     current_state=$(cat << EOF
-python_version=${python_version}
-libarchive_version=${libarchive_version}
-zstd_version=${zstd_version}
+static_python_url=${STATIC_PYTHON_URL}
+libarchive_version=${LIBARCHIVE_VERSION}
+zstd_version=${ZSTD_VERSION}
+compiler_flags=$(grep '^CFLAGS' "${BUILDER_DIR}/docker/Makefile")
+linker_flags=$(grep '^LDFLAGS' "${BUILDER_DIR}/docker/Makefile")
 EOF
 )
 
-    # Add hashes for all git repositories in third_party
+    # Add hashes for git repositories in third_party
     while IFS= read -r repo_dir; do
         local repo_name
         repo_name=$(basename "${repo_dir}")
-        if [ -d "${repo_dir}/.git" ]; then
+        if [[ -d "${repo_dir}/.git" ]]; then
             local repo_hash
             repo_hash=$(cd "${repo_dir}" && git rev-parse HEAD)
             current_state+=$'\n'"${repo_name}_commit=${repo_hash}"
         fi
-    done < <(find "${third_party_dir}" -maxdepth 1 -type d -not -name "cache" -not -name "third_party")
+    done < <(find "${THIRD_PARTY_DIR}" -maxdepth 1 -type d -not -name "cache" -not -name "third_party")
 
-    # Add hashes for patches and lib
-    current_state+=$'\n'"patches_hash=$(find "${u_patches_dir}" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | cut -d' ' -f1)"
-    current_state+=$'\n'"lib_hash=$(find "${u_scriptdir}/lib" -type f -exec sha256sum {} + | sort | sha256sum | cut -d' ' -f1)"
+    # Add hashes for project files
+    current_state+=$'\n'"patches_hash=$(find "${PATCHES_DIR}" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | cut -d' ' -f1)"
+    current_state+=$'\n'"builder_hash=$(find "${BUILDER_DIR}" -type f -exec sha256sum {} + | sort | sha256sum | cut -d' ' -f1)"
+    current_state+=$'\n'"wrapper_hash=$(find "${WRAPPER_DIR}" -type f -exec sha256sum {} + | sort | sha256sum | cut -d' ' -f1)"
 
-    if [ ! -f "${cache_state}" ] || [ "${current_state}" != "$(cat "${cache_state}")" ]; then
-        echo "${current_state}" > "${cache_state}"
+    if [[ ! -f "${CACHE_STATE}" ]] || [[ "${current_state}" != "$(cat "${CACHE_STATE}")" ]]; then
+        echo "${current_state}" > "${CACHE_STATE}"
         return 1
     fi
     return 0
 }
 
-prepare_sources() {
-    cached_download "${static_python_url}" "${cache_dir}/python-standalone-${python_version}.tar.gz"
-    cached_download "${libarchive_url}" "${cache_dir}/libarchive-${libarchive_version}.tar.gz"
-    cached_download "${zstd_url}" "${cache_dir}/zstd-${zstd_version}.tar.zst"
+_cleanup_python_dist() {
+    local original_size
+    original_size=$(du -sh "${WORK_DIR}/python" | cut -f1)
+    _message "Initial Python distribution size: ${original_size}"
 
-    _message "Preparing umu-launcher sources..."
-    _repo_updater "${third_party_dir}/umu-launcher" "${umu_launcher_url}"
-    cp -r "${third_party_dir}/umu-launcher" "${u_work_dir}/"
+    _message "Running Python distribution cleaner..."
+    "${CACHE_DIR}/cleanup_python/bin/python3" "${BUILDER_DIR}/python/cleaner.py" \
+        "${WORK_DIR}/python" \
+        "${WORK_DIR}/umu-launcher" \
+        --config "${BUILDER_DIR}/python/config.py" \
+        ${DEBUG:+--debug} || _failure "Python distribution cleanup failed"
 
-    if [[ -d "${u_patches_dir}/umu" ]]; then
-        _message "Applying umu-launcher patches..."
-        _patch_dir "${u_work_dir}/umu-launcher" "${u_patches_dir}/umu"
-    fi
+    # Metadata cleanup
+    find "${WORK_DIR}/python" -type f -name "*.py" \
+        -exec sed -i '/^#.*coding/d;/^#.*Author/d;/^#.*Copyright/d' {} +
 
-    if [ ! -d "${cache_dir}/cleanup_python" ]; then
-        _message "Extracting Python distribution..."
-        mkdir -p "${cache_dir}/cleanup_python"
-        tar xf "${cache_dir}/python-standalone-${python_version}.tar.gz" -C "${cache_dir}/cleanup_python" --strip-components=1
-    fi
+    local final_size
+    final_size=$(du -sh "${WORK_DIR}/python" | cut -f1)
 
-    mkdir -p "${u_work_dir}/python"
-    rsync -a "${cache_dir}/cleanup_python"/* "${u_work_dir}/python"
-
-    _message "Cleaning Python distribution..."
-    _cleanup_python_dist "${cache_dir}/cleanup_python" "${u_work_dir}/python"
-
-    _message "Extracting libarchive..."
-    mkdir -p "${u_work_dir}/libarchive"
-    tar xf "${cache_dir}/libarchive-${libarchive_version}.tar.gz" -C "${u_work_dir}/libarchive" --strip-components=1
-
-    _message "Extracting zstd..."
-    mkdir -p "${u_work_dir}/zstd"
-    tar xf "${cache_dir}/zstd-${zstd_version}.tar.zst" -C "${u_work_dir}/zstd" --strip-components=1
-
-    cp "${u_scriptdir}/src/umu-run-wrapper.c" "${u_work_dir}/"
+    _message "Python distribution cleaned successfully!"
+    _message "Size reduced from ${original_size} to ${final_size}"
 }
 
-prepare_docker_build() {
-    local docker_context="${u_work_dir}/docker_context"
-    mkdir -p "${docker_context}/lib"
+prepare_sources() {
+    # Download dependencies
+    cached_download "${STATIC_PYTHON_URL}" "${CACHE_DIR}/python-standalone-${PYTHON_VERSION}.tar.gz"
+    cached_download "${LIBARCHIVE_URL}" "${CACHE_DIR}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
+    cached_download "${ZSTD_URL}" "${CACHE_DIR}/zstd-${ZSTD_VERSION}.tar.zst"
 
-    cp -r "${u_work_dir}/libarchive" "${docker_context}/"
-    cp -r "${u_work_dir}/zstd" "${docker_context}/"
+    # Prepare UMU launcher
+    _message "Preparing umu-launcher sources..."
+    _repo_updater "${THIRD_PARTY_DIR}/umu-launcher" "${UMU_LAUNCHER_URL}"
+    cp -r "${THIRD_PARTY_DIR}/umu-launcher" "${WORK_DIR}/"
 
-    cp "${u_scriptdir}/lib/umu-build.sh" "${docker_context}/"
-    cp "${u_scriptdir}/lib/messaging.sh" "${docker_context}/lib/"
+    if [[ -d "${PATCHES_DIR}/umu" ]]; then
+        _message "Applying umu-launcher patches..."
+        _patch_dir "${WORK_DIR}/umu-launcher" "${PATCHES_DIR}/umu"
+    fi
+
+    # Setup Python environment for cleanup
+    if [[ ! -d "${CACHE_DIR}/cleanup_python" ]]; then
+        _message "Extracting Python distribution..."
+        mkdir -p "${CACHE_DIR}/cleanup_python"
+        tar xf "${CACHE_DIR}/python-standalone-${PYTHON_VERSION}.tar.gz" \
+            -C "${CACHE_DIR}/cleanup_python" --strip-components=1
+    fi
+
+    # Prepare Python distribution
+    mkdir -p "${WORK_DIR}/python"
+    rsync -a "${CACHE_DIR}/cleanup_python"/* "${WORK_DIR}/python"
+    _cleanup_python_dist
+
+    # Extract build dependencies
+    _message "Extracting libarchive..."
+    mkdir -p "${WORK_DIR}/libarchive"
+    tar xf "${CACHE_DIR}/libarchive-${LIBARCHIVE_VERSION}.tar.gz" \
+        -C "${WORK_DIR}/libarchive" --strip-components=1
+
+    _message "Extracting zstd..."
+    mkdir -p "${WORK_DIR}/zstd"
+    tar xf "${CACHE_DIR}/zstd-${ZSTD_VERSION}.tar.zst" \
+        -C "${WORK_DIR}/zstd" --strip-components=1
+
+    # Copy wrapper sources
+    _message "Copying wrapper sources..."
+    cp -r "${WRAPPER_DIR}" "${WORK_DIR}/" || _failure "Failed to copy wrapper sources"
+}
+
+prepare_docker_context() {
+    local docker_context="${WORK_DIR}/docker_context"
+    mkdir -p "${docker_context}/build"
+
+    # Copy build dependencies
+    cp -r "${WORK_DIR}/libarchive" "${docker_context}/build/" || _failure "Failed to copy libarchive"
+    cp -r "${WORK_DIR}/zstd" "${docker_context}/build/" || _failure "Failed to copy zstd"
+    cp -r "${WORK_DIR}/wrapper" "${docker_context}/build/" || _failure "Failed to copy wrapper sources"
+
+    # Copy build system files
+    mkdir -p "${docker_context}/build/lib"
+    cp "${BUILDER_DIR}/docker/docker-build.sh" "${docker_context}/build/lib/" || _failure "Failed to copy build script"
+    cp "${BUILDER_DIR}/docker/Makefile" "${docker_context}/build/lib/" || _failure "Failed to copy makefile"
+    cp "${PROJECT_ROOT}/lib/messaging.sh" "${docker_context}/build/lib/" || _failure "Failed to copy messaging utilities"
 
     echo "${docker_context}"
 }
 
 build_docker_image() {
-    local docker_context
-    docker_context=$(prepare_docker_build)
+    local skip_docker_build="$1"
+    local docker_context="$2"
 
-    if [[ "${u_skip_docker_build}" == "true" ]] && docker image inspect "${docker_image}" >/dev/null 2>&1; then
+    if [[ "${skip_docker_build}" == "true" ]] && docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
         _message "Skipping Docker image build as requested"
         return 0
     fi
 
     _message "Building Docker image..."
-    docker build --progress=plain -t "${docker_image}" -f "${u_scriptdir}/lib/Dockerfile" "${docker_context}" || {
+    if ! docker build --progress=plain -t ${DOCKER_IMAGE} -f "${BUILDER_DIR}/docker/Dockerfile" "${docker_context}"; then
         local ret=$?
         _error "Docker build failed"
         rm -rf "${docker_context}"
         return $ret
-    }
+    fi
 
     rm -rf "${docker_context}"
 }
@@ -202,43 +262,50 @@ build_docker_image() {
 run_docker_build() {
     _message "Running build in Docker container..."
 
-    docker run --rm -i \
+    if ! docker run --rm -i \
         --user "$(id -u):$(id -g)" \
-        -v "${u_work_dir}:/build/work:rw" \
-        -v "${u_build_dir}:/build/output:rw" \
-        -v "${u_scriptdir}/lib:/build/lib:ro" \
+        -v "${WORK_DIR}:/build/work:rw" \
+        -v "${BUILD_DIR}:/build/output:rw" \
         -e WORK_DIR=/build/work \
         -e BUILD_DIR=/build/output \
-        "${docker_image}" || _failure "Docker build failed"
+        "${DOCKER_IMAGE}"; then
+        _failure "Docker build failed"
+    fi
 }
 
 cleanup() {
-    if [[ "${u_keep_work}" != "true" ]]; then
-        rm -rf "${u_work_dir}"
+    local keep_work="$1"
+    
+    if [[ "${keep_work}" != "true" ]]; then
+        rm -rf "${WORK_DIR}"
     fi
 }
 
 main() {
-    parse_args "$@"
+    IFS=':' read -r clean_build skip_docker_build keep_work <<< "$(parse_args "$@")"
 
-    if [ "${u_clean_build}" = "true" ]; then
+    if [[ "${clean_build}" == "true" ]]; then
         _message "Clean build requested, starting fresh..."
-    elif [ -x "${u_build_dir}/umu-run" ] && _check_cache_state; then
-        _message "No changes detected in versions, sources or configurations, and binary exists at ${u_build_dir}/umu-run"
+    elif [[ -x "${BUILD_DIR}/umu-run" ]] && _check_cache_state; then
+        _message "No changes detected in sources or configurations"
+        _message "Existing binary found at: ${BUILD_DIR}/umu-run"
         return 0
     else
         _message "Changes detected or binary doesn't exist, starting fresh..."
     fi
 
-    prepare_directories
+    prepare_directories "${clean_build}"
     prepare_sources
-    build_docker_image
+
+    local docker_context
+    docker_context=$(prepare_docker_context)
+    build_docker_image "${skip_docker_build}" "${docker_context}"
     run_docker_build
 
-    _message "umu-run has been built successfully"
-    _message "The executable is located at: ${u_build_dir}/umu-run"
+    _message "Build completed successfully"
+    _message "The executable is located at: ${BUILD_DIR}/umu-run"
 
-    cleanup
+    cleanup "${keep_work}"
 }
 
 main "$@"

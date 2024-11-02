@@ -1016,7 +1016,7 @@ index 1954d0ff111..11770b90793 100644
          hr = E_OUTOFMEMORY;
          goto exit;
      }
-@@ -2533,10 +2557,8 @@ static NTSTATUS pulse_set_sample_rate(void *args)
+@@ -2533,17 +2557,15 @@ static NTSTATUS pulse_set_sample_rate(void *args)
          wait_pa_operation_complete(pa_stream_flush(stream->stream, pulse_op_cb, &success));
  
      stream->clock_lastpos = stream->clock_written = 0;
@@ -1029,3 +1029,11 @@ index 1954d0ff111..11770b90793 100644
      stream->bufsize_frames = new_bufsize_frames;
      stream->ss = new_ss;
  
+     size = 0;
+     NtFreeVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer, &size, MEM_RELEASE);
+ 
+-    silence_buffer(new_ss.format, new_buffer, stream->real_bufsize_bytes);
++    silence_buffer(new_ss.format, new_buffer, size);
+     stream->local_buffer = new_buffer;
+ 
+ exit:

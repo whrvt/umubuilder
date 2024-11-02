@@ -1,11 +1,11 @@
 #!/bin/bash
 
-pkgver=9-8
+pkgver=9-9
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
-protonurl=https://github.com/GloriousEggroll/proton-ge-custom.git
-protontag=GE-Proton9-7
+protonurl=https://github.com/CachyOS/proton-cachyos.git
+protontag=cachyos-9.0-20241031
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git

@@ -1,0 +1,97 @@
+From 73dcf80e7f136e10ba06ddd782fa7129877eb662 Mon Sep 17 00:00:00 2001
+From: William Horvath <william@horvath.blog>
+Date: Sat, 2 Nov 2024 04:19:13 -0700
+Subject: [PATCH] PROTON: Perform some magic tricks to allow osu! to work on
+ newer Proton versions.
+
+---
+ dlls/combase/roapi.c   | 20 ++++++++++++++++++++
+ dlls/kernel32/module.c | 27 +++++++++++++++++++++++++++
+ 2 files changed, 47 insertions(+)
+
+diff --git a/dlls/combase/roapi.c b/dlls/combase/roapi.c
+index e1017f1..c2a012c 100644
+--- a/dlls/combase/roapi.c
++++ b/dlls/combase/roapi.c
+@@ -200,6 +200,21 @@ done:
+     return hr;
+ }
+ 
++/* copied from dlls/mshtml/mutation.c is_iexplore() */
++static BOOL is_osu(void)
++{
++    static volatile char cache = -1;
++    BOOL ret = cache;
++    if(ret == -1) {
++        const WCHAR *p, *name = NtCurrentTeb()->Peb->ProcessParameters->ImagePathName.Buffer;
++        if((p = wcsrchr(name, '/'))) name = p + 1;
++        if((p = wcsrchr(name, '\\'))) name = p + 1;
++        ret = !wcsicmp(name, L"osu!.exe");
++        cache = ret;
++    }
++    return ret;
++}
++
+ /***********************************************************************
+  *      RoGetParameterizedTypeInstanceIID (combase.@)
+  */
+@@ -208,6 +223,11 @@ HRESULT WINAPI RoGetParameterizedTypeInstanceIID(UINT32 name_element_count, cons
+                                                  ROPARAMIIDHANDLE *hiid)
+ {
+     FIXME("stub: %d %p %p %p %p\n", name_element_count, name_elements, meta_data_locator, iid, hiid);
++    /* HACK for osu! after October 29th update (PROTON EDITION)
++    *
++    * Justification: It makes the game work when wine_get_version() is masked/nulled/unexported.
++    */
++    if (is_osu()) return S_OK;
+     if (iid) *iid = GUID_NULL;
+     if (hiid) *hiid = INVALID_HANDLE_VALUE;
+     return E_NOTIMPL;
+diff --git a/dlls/kernel32/module.c b/dlls/kernel32/module.c
+index ed15e57..513bb93 100644
+--- a/dlls/kernel32/module.c
++++ b/dlls/kernel32/module.c
+@@ -262,6 +262,21 @@ BOOL WINAPI GetBinaryTypeA( LPCSTR lpApplicationName, LPDWORD lpBinaryType )
+     return GetBinaryTypeW(NtCurrentTeb()->StaticUnicodeString.Buffer, lpBinaryType);
+ }
+ 
++/* copied from dlls/mshtml/mutation.c is_iexplore() */
++static BOOL is_osu(void)
++{
++    static volatile char cache = -1;
++    BOOL ret = cache;
++    if(ret == -1) {
++        const WCHAR *p, *name = NtCurrentTeb()->Peb->ProcessParameters->ImagePathName.Buffer;
++        if((p = wcsrchr(name, '/'))) name = p + 1;
++        if((p = wcsrchr(name, '\\'))) name = p + 1;
++        ret = !wcsicmp(name, L"osu!.exe");
++        cache = ret;
++    }
++    return ret;
++}
++
+ /***********************************************************************
+  *           GetProcAddress   		(KERNEL32.@)
+  *
+@@ -279,6 +294,18 @@ FARPROC get_proc_address( HMODULE hModule, LPCSTR function )
+ {
+     FARPROC     fp;
+ 
++    if ((ULONG_PTR)function >> 16)
++    {
++        /* HACK for osu! after October 29th update (PROTON EDITION)
++        *
++        * Justification: It makes the game work when wine_get_version() is masked/nulled/unexported.
++        * The game uses a code path that's broken under newer Proton versions if it detects that it's
++        * running under wine, so we need to pretend that we're on Windows.
++        */
++        if (is_osu() && !strncmp( function, "wine_get_version", 16 ))
++            return NULL;
++    }
++
+     if (!hModule) hModule = NtCurrentTeb()->Peb->ImageBaseAddress;
+ 
+     if ((ULONG_PTR)function >> 16)
+-- 
+2.47.0
+
