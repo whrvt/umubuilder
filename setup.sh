@@ -157,7 +157,7 @@ _build_umu_run() {
 ##############################################
 _install() {
     rsync -a --delete "${builddir}/${buildname}/" "${HOME}/.steam/root/compatibilitytools.d/${buildname}/" ||
-        _failure "Couldn't copy ${builddir}/${buildname} to ${HOME}/.steam/root/compatibilitytools.d/${buildname}."
+        _failure "Couldn't copy ${builddir}/${buildname} to ${HOME}/.steam/root/compatibilitytools.d/${buildname}. Do you have rsync?"
 
     _message "Build done, it should be installed to ~/.steam/root/compatibilitytools.d/${buildname}"
     _message "Along with the archive in the current directory"
@@ -179,7 +179,7 @@ _sources() {
             protonfixes)
                 _repo_updater "${scriptdir}/protonfixes" "${umu_protonfixesurl}"
                 [ -d "${srcdir}"/protonfixes ] && rm -rf "${srcdir}"/protonfixes
-                rsync -a --exclude='.git' --exclude='.git*' "${scriptdir}"/protonfixes "${srcdir}"/
+                rsync -a --exclude='.git' --exclude='.git*' "${scriptdir}"/protonfixes "${srcdir}"/ || _failure "Couldn't copy protonfixes to the proton source... Do you have rsync?"
                 ;;
         esac
     done
