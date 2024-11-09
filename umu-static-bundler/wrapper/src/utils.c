@@ -585,7 +585,7 @@ wrp_status_t setup_python_environment(const char *app_dir,
 
   /* Set environment variables */
   if (setenv("PATH", new_path, 1) != 0 ||
-      setenv("PYTHONEXECUTABLE", python_path, 1) ) {
+      setenv("PYTHONEXECUTABLE", python_path, 1) != 0 ) {
     return handle_error(WRP_EERRNO, NULL, NULL,
                         "Failed to set environment variables");
   }
