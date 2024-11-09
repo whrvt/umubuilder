@@ -242,14 +242,19 @@ prepare_docker_context() {
 build_docker_image() {
     local skip_docker_build="$1"
     local docker_context="$2"
+    local clean_build="$3"
 
     if [[ "${skip_docker_build}" == "true" ]] && docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
         _message "Skipping Docker image build as requested"
         return 0
     fi
 
+    if [[ "${clean_build}" == "true" ]]; then
+        local _uncache="--no-cache"
+    fi
+
     _message "Building Docker image..."
-    if ! docker build --progress=plain -t ${DOCKER_IMAGE} -f "${BUILDER_DIR}/docker/Dockerfile" "${docker_context}"; then
+    if ! docker build "${_uncache:-}" --progress=plain -t ${DOCKER_IMAGE} -f "${BUILDER_DIR}/docker/Dockerfile" "${docker_context}"; then
         local ret=$?
         _error "Docker build failed"
         rm -rf "${docker_context}"
@@ -299,7 +304,7 @@ main() {
 
     local docker_context
     docker_context=$(prepare_docker_context)
-    build_docker_image "${skip_docker_build}" "${docker_context}"
+    build_docker_image "${skip_docker_build}" "${docker_context}" "${clean_build}"
     run_docker_build
 
     _message "Build completed successfully"
