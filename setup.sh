@@ -163,6 +163,43 @@ _install() {
     _message "Along with the archive in the current directory"
 }
 ##############################################
+# Patching
+##############################################
+_patch() {
+    [ -z "${*}" ] && _failure "No directories specified to _patch."
+    [ -z "${srcdir:-}" ] && _failure "srcdir is not set"
+    [ -z "${patchdir:-}" ] && _failure "patchdir is not set"
+    [ -z "${CPUs:-}" ] && CPUs=$(($(nproc) + 1))
+
+    for subdir in "${@}"; do
+        local target_dir
+        case "${subdir}" in
+        proton) target_dir="${srcdir}" ;;
+        wine) target_dir="${srcdir}/${subdir}" ;;
+        *) _failure "Unknown patch target: ${subdir}" ;;
+        esac
+
+        _patch_dir "${target_dir}" "${patchdir}/${subdir}" || return $?
+
+        # Handle proton-specific post-patch operations
+        if [ "${subdir}" = "proton" ]; then
+            if [ -n "${protonurl:-}" ] && [[ "${protonurl}" =~ "GloriousEggroll" ]]; then
+                _message "Applying GE patches"
+                cd "${target_dir}" || return 1
+                ./patches/protonprep-valve-staging.sh || _failure "Failed to apply GE protonprep patch"
+            fi
+
+            # Update CPU count in makefiles
+            find "${target_dir}"/make/*mk "${target_dir}"/Makefile.in -execdir sed -i \
+                -e "s/[\$]*(SUBJOBS)/$CPUs/g" \
+                -e "s/J = \$(patsubst -j%,%,\$(filter -j%,\$(MAKEFLAGS)))/J = $CPUs/" \
+                -e "s/J := \$(shell nproc)/J := $CPUs/" \
+                '{}' +
+        fi
+    done
+    return 0
+}
+##############################################
 # Source preparation
 ##############################################
 _sources() {

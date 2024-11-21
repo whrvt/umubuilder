@@ -27,12 +27,15 @@ CFLAGS = -static $(TARGET) \
 		 -Wstring-compare \
 		 -Wmissing-declarations \
 		 -Wwrite-strings \
+		 -Wa,--noexecstack \
+		 -Wl,--section-start=.note.GNU-stack=0 \
 		 $(INCLUDES)
 
 # Linker flags
 LDFLAGS = -static \
 		  -Wl,--gc-sections \
 		  -Wl,--strip-all \
+		  -Wl,--section-start=.note.GNU-stack=0 \
 		  -Wl,--whole-archive \
 		  -l:libarchive.a \
 		  -Wl,--no-whole-archive \
