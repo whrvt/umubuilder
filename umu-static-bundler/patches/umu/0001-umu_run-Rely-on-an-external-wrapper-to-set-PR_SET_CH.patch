@@ -12,31 +12,32 @@ This allows a fully statically linked umu-launcher to still have this prctl call
  3 files changed, 2 insertions(+), 70 deletions(-)
 
 diff --git a/umu/umu_run.py b/umu/umu_run.py
-index 9e584bb..77ee9ec 100755
+index d90c6a8..a74ab8a 100755
 --- a/umu/umu_run.py
 +++ b/umu/umu_run.py
-@@ -5,12 +5,10 @@ import sys
+@@ -2,13 +2,11 @@ import os
+ import sys
  import threading
  import time
- import zipfile
 -from _ctypes import CFuncPtr
- from argparse import ArgumentParser, Namespace, RawTextHelpFormatter
+ from argparse import Namespace
+ from array import array
  from collections.abc import MutableMapping
  from concurrent.futures import Future, ThreadPoolExecutor
  from contextlib import suppress
 -from ctypes import CDLL, c_int, c_ulong
  from errno import ENETUNREACH
+ from zipfile import Path as ZipPath
  
- try:
-@@ -46,7 +44,6 @@ from umu.umu_plugins import set_env_toml
+@@ -50,7 +48,6 @@ from umu.umu_plugins import set_env_toml
  from umu.umu_proton import get_umu_proton
  from umu.umu_runtime import setup_umu
  from umu.umu_util import (
 -    get_libc,
      get_library_paths,
+     has_umu_setup,
      is_installed_verb,
-     is_winetricks_verb,
-@@ -730,12 +727,9 @@ def run_in_steammode(proc: Popen) -> int:
+@@ -678,12 +675,9 @@ def run_in_steammode(proc: Popen) -> int:
  
  def run_command(command: tuple[Path | str, ...]) -> int:
      """Run the executable using Proton within the Steam Runtime."""
@@ -46,10 +47,10 @@ index 9e584bb..77ee9ec 100755
      ret: int = 0
 -    prctl_ret: int = 0
 -    libc: str = get_libc()
- 
      is_gamescope_session: bool = (
          os.environ.get("XDG_CURRENT_DESKTOP") == "gamescope"
-@@ -759,18 +753,6 @@ def run_command(command: tuple[Path | str, ...]) -> int:
+         or os.environ.get("XDG_SESSION_DESKTOP") == "gamescope"
+@@ -705,18 +699,6 @@ def run_command(command: tuple[Path | str, ...]) -> int:
      else:
          cwd = Path.cwd()
  

@@ -24,11 +24,11 @@ HOME=${OLDHOME}
 readonly _VERSION_FILE="${UMU_DIR}/umu/umu_version.json"
 readonly STAGED_VERSION="${WORK_DIR}/umu_version.json"
 
-if [[ ! -f "${_VERSION_FILE}" ]]; then
-    _warning "umu_version.json not found at ${_VERSION_FILE}"
-else 
-    cp "${_VERSION_FILE}" "${STAGED_VERSION}"
+if [ ! -f "${_VERSION_FILE}" ]; then
+    DATE=$(date)
+    printf '%s %s' "${DATE}" "$(echo -n "${DATE}" | sha512sum -)" > "${_VERSION_FILE}"
 fi
+cp "${_VERSION_FILE}" "${STAGED_VERSION}"
 
 # Build static wrapper
 _message "Building static wrapper..."

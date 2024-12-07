@@ -7,8 +7,8 @@ ENV CC=clang \
     AR=llvm-ar \
     NM=llvm-nm \
     RANLIB=llvm-ranlib \
-    CFLAGS="-static -fPIC --target=x86_64-alpine-linux-musl -Oz -ffunction-sections -fdata-sections" \
-    CXXFLAGS="-static -fPIC --target=x86_64-alpine-linux-musl -Oz -ffunction-sections -fdata-sections" \
+    CFLAGS="-march=x86-64 -static -fPIC --target=x86_64-alpine-linux-musl -Oz -ffunction-sections -fdata-sections" \
+    CXXFLAGS="-march=x86-64 -static -fPIC --target=x86_64-alpine-linux-musl -Oz -ffunction-sections -fdata-sections" \
     LDFLAGS="-static -Wl,--gc-sections,--strip-all" \
     PKG_CONFIG="pkg-config --static"
 
@@ -84,10 +84,6 @@ ENV PATH="/opt/build-env/bin:$PATH" \
 # Runtime dependencies 
 RUN apk add --no-cache \
     build-base \
-    clang \
-    clang-dev \
-    llvm17 \
-    lld \
     musl-dev \
     python3 \
     python3-dev \

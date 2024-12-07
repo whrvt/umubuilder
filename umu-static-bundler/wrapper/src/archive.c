@@ -208,7 +208,7 @@ static wrp_status_t extract_archive_section(const char *self_path,
   struct archive_context ctx;
   wrp_status_t status;
   long archive_start;
-  unsigned long long archive_size;
+  unsigned long long archive_size = 0;
   int r;
 
   /* Initialize extraction context */

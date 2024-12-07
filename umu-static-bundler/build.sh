@@ -24,8 +24,8 @@ source "${PROJECT_ROOT}/lib/messaging.sh"
 source "${PROJECT_ROOT}/lib/git-utils.sh"
 
 # Source versions
-readonly PYTHON_VERSION="3.13.0"
-readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-${PYTHON_VERSION}+20241016-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+readonly PYTHON_VERSION="3.13.1"
+readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241206/cpython-${PYTHON_VERSION}+20241206-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 readonly LIBARCHIVE_VERSION="3.7.7"
 readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
 readonly ZSTD_VERSION="1.5.6"
@@ -159,7 +159,7 @@ _cleanup_python_dist() {
     _message "Initial Python distribution size: ${original_size}"
 
     _message "Running Python distribution cleaner..."
-    "${CACHE_DIR}/cleanup_python/bin/python3" "${BUILDER_DIR}/python/cleaner.py" \
+    "${CACHE_DIR}/cleanup_python${PYTHON_VERSION}/bin/python3" "${BUILDER_DIR}/python/cleaner.py" \
         "${WORK_DIR}/python" \
         "${WORK_DIR}/umu-launcher" \
         --config "${BUILDER_DIR}/python/config.py" \
@@ -193,16 +193,16 @@ prepare_sources() {
     fi
 
     # Setup Python environment for cleanup
-    if [[ ! -d "${CACHE_DIR}/cleanup_python" ]]; then
+    if [[ ! -d "${CACHE_DIR}/cleanup_python${PYTHON_VERSION}" ]]; then
         _message "Extracting Python distribution..."
-        mkdir -p "${CACHE_DIR}/cleanup_python"
+        mkdir -p "${CACHE_DIR}/cleanup_python${PYTHON_VERSION}"
         tar xf "${CACHE_DIR}/python-standalone-${PYTHON_VERSION}.tar.gz" \
-            -C "${CACHE_DIR}/cleanup_python" --strip-components=1
+            -C "${CACHE_DIR}/cleanup_python${PYTHON_VERSION}" --strip-components=1
     fi
 
     # Prepare Python distribution
     mkdir -p "${WORK_DIR}/python"
-    rsync -a "${CACHE_DIR}/cleanup_python"/* "${WORK_DIR}/python"
+    rsync -a "${CACHE_DIR}/cleanup_python${PYTHON_VERSION}"/* "${WORK_DIR}/python"
     _cleanup_python_dist
 
     # Extract build dependencies

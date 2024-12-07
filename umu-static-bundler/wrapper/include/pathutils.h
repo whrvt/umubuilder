@@ -32,6 +32,8 @@ wrp_status_t path_is_directory(const char *path, int *is_dir);
 wrp_status_t path_is_executable(const char *path, int *is_exec);
 wrp_status_t path_is_absolute(const char *path, int *is_absolute);
 wrp_status_t path_is_relative(const char *path, int *is_relative);
+wrp_status_t path_has_extension(const char *path, const char *ext,
+                                int *has_ext);
 wrp_status_t path_is_subpath(const char *parent, const char *child,
                              int *is_subpath);
 wrp_status_t path_is_symlink(const char *path, int *is_symlink);

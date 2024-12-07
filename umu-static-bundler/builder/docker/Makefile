@@ -1,24 +1,26 @@
 # Build configuration
-CC = clang
-TARGET = --target=x86_64-alpine-linux-musl
+CC = gcc
 INCLUDES = -I/usr/local/include -Iinclude
 LIBDIRS = -L/usr/local/lib
 
 # Output configuration
 BINARY_NAME ?= wrapper
-PYTHON_VERSION ?= 3.13.0
+PYTHON_VERSION ?= 3.13.1
 VERSION_FILE ?= version.json
 VERSION_FILE_NAME ?= $(VERSION_FILE)
 
 # Compiler flags
-CFLAGS = -static $(TARGET) \
+CFLAGS = -static \
+		 -march=x86-64 \
 		 -Oz \
-		 -fno-stack-protector \
 		 -ffunction-sections \
 		 -fdata-sections \
 		 -fmerge-all-constants \
-		 -fno-unwind-tables \
-		 -fno-asynchronous-unwind-tables \
+		 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 \
+		 -fstrict-flex-arrays=3 \
+		 -fcf-protection=full -fstack-clash-protection -fstack-protector-all \
+		 -fexceptions \
+		 -fPIE \
 		 -Wall \
 		 -Wextra \
 		 -Wpedantic \
@@ -27,15 +29,22 @@ CFLAGS = -static $(TARGET) \
 		 -Wstring-compare \
 		 -Wmissing-declarations \
 		 -Wwrite-strings \
-		 -Wa,--noexecstack \
-		 -Wl,--section-start=.note.GNU-stack=0 \
+		 -Wtrampolines \
 		 $(INCLUDES)
 
 # Linker flags
-LDFLAGS = -static \
+LDFLAGS = -static-pie -fPIE \
+		  -fcf-protection=full -fstack-clash-protection -fstack-protector-all \
+		  -fexceptions \
+		  -Wall \
+		  -Wextra \
+		  -Wpedantic \
+		  -Wtrampolines \
 		  -Wl,--gc-sections \
 		  -Wl,--strip-all \
-		  -Wl,--section-start=.note.GNU-stack=0 \
+		  -Wl,-z,nodlopen -Wl,-z,noexecstack \
+		  -Wl,-z,relro,-z,now \
+		  -Wl,--as-needed -Wl,--no-copy-dt-needed-entries \
 		  -Wl,--whole-archive \
 		  -l:libarchive.a \
 		  -Wl,--no-whole-archive \
