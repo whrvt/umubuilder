@@ -1,8 +1,8 @@
 diff --git a/Makefile.in b/Makefile.in
-index 367b720..eb2c792 100644
+index f62b380..ba2aa1e 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -545,6 +545,23 @@ $(DIST_WINEOPENXR_JSON64): $(WINEOPENXR_SRC)/wineopenxr64.json default_pfx
+@@ -545,6 +545,24 @@ $(DIST_WINEOPENXR_JSON64): $(WINEOPENXR_SRC)/wineopenxr64.json default_pfx
  
  all-dist: $(DIST_WINEOPENXR_JSON64)
  
@@ -19,6 +19,7 @@ index 367b720..eb2c792 100644
 +
 +$(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
 +	cd $(SRCDIR)/protonfixes && make install
++	rm -rf $(PROTONFIXES_TARGET)
 +	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
 +	rm -r $(SRCDIR)/protonfixes/dist
 +
@@ -26,33 +27,39 @@ index 367b720..eb2c792 100644
  
  ##
  ## steam.exe
-@@ -1322,7 +1339,14 @@ deploy: all
- redist: all
- 	mkdir -p $(REDIST_DIR)
- 	rsync --delete -arx $(DST_BASE)/ $(REDIST_DIR)
+@@ -1392,24 +1410,6 @@ $(DIST_AV1_PATENTS): $(AV1_PATENTS)
+ 
+ all-dist: $(DIST_LICENSE) $(DIST_OFL_LICENSE) $(DIST_AV1_PATENTS)
+ 
+-##
+-## protonfixes
+-##
 -
-+	cp $(PROTONFIXES_TARGET)/cabextract $(REDIST_DIR)/files/bin/
-+	cp -a $(PROTONFIXES_TARGET)/libmspack.so $(REDIST_DIR)/files/lib64/
-+	cp -a $(PROTONFIXES_TARGET)/libmspack.so.0 $(REDIST_DIR)/files/lib64/
-+	cp $(PROTONFIXES_TARGET)/libmspack.so.0.1.0 $(REDIST_DIR)/files/lib64/
-+	mv $(REDIST_DIR) $(BUILD_NAME)
-+##	XZ_OPT="-9 -T0" tar -Jcf $(BUILD_NAME).tar.xz --numeric-owner --owner=0 --group=0 --null $(BUILD_NAME)
-+##	sha512sum $(BUILD_NAME).tar.xz > $(BUILD_NAME).sha512sum
-+##	@echo "Proton build available at $(BUILD_NAME).tar.xz"
+-PROTONFIXES_TARGET := $(addprefix $(DST_BASE)/,protonfixes)
+-$(PROTONFIXES_TARGET): $(addprefix $(SRCDIR)/,protonfixes)
+-
+-$(OBJ)/.build-protonfixes:
+-	cd $(SRCDIR)/protonfixes && make
+-	touch $(@)
+-
+-$(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
+-	cd $(SRCDIR)/protonfixes && make install
+-	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
+-	rm -r $(SRCDIR)/protonfixes/dist
+-
+-all-dist: $(PROTONFIXES_TARGET)
+-
+ ##
+ ## proton(.py), filelock.py, etc.
+ ##
+@@ -1465,10 +1465,6 @@ redist: all
+ 	cp -a $(PROTONFIXES_TARGET)/libmspack.so.0 $(REDIST_DIR)/files/lib64/
+ 	cp $(PROTONFIXES_TARGET)/libmspack.so.0.1.0 $(REDIST_DIR)/files/lib64/
+ 	mv $(REDIST_DIR) $(BUILD_NAME)
+-	tar -cvzf $(BUILD_NAME).tar.gz $(BUILD_NAME)
+-	sha512sum $(BUILD_NAME).tar.gz > $(BUILD_NAME).sha512sum
+-	@echo "Proton build available at $(BUILD_NAME).tar.gz"
+-
  
  ##
  ## make module=$dllname module[32,64]
-diff --git a/Makefile.in b/Makefile.in
-index 16405fc..0c0818c 100644
---- a/Makefile.in
-+++ b/Makefile.in
-@@ -558,7 +558,8 @@ $(OBJ)/.build-protonfixes:
- 
- $(PROTONFIXES_TARGET): $(OBJ)/.build-protonfixes
- 	cd $(SRCDIR)/protonfixes && make install
--	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
-+	rm -rf $(PROTONFIXES_TARGET)
-+	cp -a $(SRCDIR)/protonfixes/dist/protonfixes $(PROTONFIXES_TARGET)
- 	rm -r $(SRCDIR)/protonfixes/dist
- 
- all-dist: $(PROTONFIXES_TARGET)

@@ -56,14 +56,6 @@ index 74253d9..833b9ff 100644
      return TRUE;
  }
  
-@@ -2620,6 +2633,7 @@ static NTSTATUS pulse_set_sample_rate(void *args)
-     silence_buffer(new_ss.format, new_buffer, size);
-     stream->local_buffer = new_buffer;
- 
-+    try_memlock(stream, size, BUFTYPE_LOCAL);
- exit:
-     pulse_unlock();
- 
 -- 
 2.46.2
 

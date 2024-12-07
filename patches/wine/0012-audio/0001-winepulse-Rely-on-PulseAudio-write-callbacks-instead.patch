@@ -993,47 +993,22 @@ index 17ac52d6ed7..02207f344f6 100644
 2.46.0
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
-index 1954d0ff111..11770b90793 100644
+index 062720c..accf37e 100644
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -2510,11 +2530,15 @@ static NTSTATUS pulse_set_sample_rate(void *args)
- 
-     new_ss = stream->ss;
-     new_ss.rate = params->rate;
--    new_bufsize_frames = ceil((stream->duration / 10000000.) * new_ss.rate);
--    size = new_bufsize_frames * 2 * pa_frame_size(&stream->ss);
- 
--    if (NtAllocateVirtualMemory(GetCurrentProcess(), (void **)&new_buffer,
--                                zero_bits, &size, MEM_COMMIT, PAGE_READWRITE)) {
-+    if (stream->duration < 20000000)
-+        new_bufsize_frames = ceil((stream->duration / 10000000.) * new_ss.rate);
-+    else
-+        new_bufsize_frames = 2 * new_ss.rate;
-+    size = stream->bufsize_bytes = new_bufsize_frames * pa_frame_size(&stream->ss);
-+
-+    if (NtAllocateVirtualMemory(GetCurrentProcess(), (void **)&new_buffer, zero_bits, &size, MEM_COMMIT, PAGE_READWRITE))
-+    {
-         hr = E_OUTOFMEMORY;
-         goto exit;
-     }
-@@ -2533,17 +2557,15 @@ static NTSTATUS pulse_set_sample_rate(void *args)
+@@ -2571,12 +2571,11 @@ static NTSTATUS pulse_set_sample_rate(void *args)
          wait_pa_operation_complete(pa_stream_flush(stream->stream, pulse_op_cb, &success));
  
      stream->clock_lastpos = stream->clock_written = 0;
 -    stream->pa_offs_bytes = stream->lcl_offs_bytes = 0;
 -    stream->held_bytes = stream->pa_held_bytes = 0;
 -    stream->period_bytes = pa_frame_size(&new_ss) * muldiv(stream->mmdev_period_usec, new_ss.rate, 1000000);
--    stream->real_bufsize_bytes = size;
 +    stream->wri_offs_bytes = stream->lcl_offs_bytes = stream->held_bytes = 0;
 +    stream->period_bytes = pa_frame_size(&new_ss) * muldiv(stream->def_period / 10, new_ss.rate, 1000000);
-     stream->bufsize_frames = new_bufsize_frames;
      stream->ss = new_ss;
  
-     size = 0;
-     NtFreeVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer, &size, MEM_RELEASE);
- 
--    silence_buffer(new_ss.format, new_buffer, stream->real_bufsize_bytes);
-+    silence_buffer(new_ss.format, new_buffer, size);
-     stream->local_buffer = new_buffer;
+-    silence_buffer(new_ss.format, stream->local_buffer, stream->real_bufsize_bytes);
++    silence_buffer(new_ss.format, stream->local_buffer, stream->bufsize_bytes);
  
  exit:
+     pulse_unlock();
