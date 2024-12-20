@@ -1,0 +1,83 @@
+From 074d1def1d497d071f2e4bfdd0837b0cde494357 Mon Sep 17 00:00:00 2001
+From: William Horvath <william@horvath.blog>
+Date: Thu, 12 Dec 2024 03:37:59 -0800
+Subject: [PATCH] win32u: Check for driver events more often.
+
+Use a QPC wrapper to avoid NtGetTickCount, which is coupled to
+the 16 millisecond user_shared_data_timeout in server/fd.c. This
+lowers the throttling period to 0.25ms (8khz), which is quick
+enough to consume driver events from high polling rate devices.
+
+Fixes: 54ca1ab607d3ff22a1f57a9561430f64c75f0916
+Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=57442
+
+(cherry picked from commit b5a4c2f64ad07b0aaeddc2d8245bc79ddb33b1f5)
+---
+ dlls/win32u/message.c        | 16 ++++++++++++----
+ dlls/win32u/ntuser_private.h |  2 +-
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
+index aec44a03e65..dbfbe157a97 100644
+--- a/dlls/win32u/message.c
++++ b/dlls/win32u/message.c
+@@ -3159,6 +3159,14 @@ static HANDLE get_server_queue_handle(void)
+     return ret;
+ }
+ 
++/* monotonic timer tick for throttling driver event checks */
++static inline LONGLONG get_driver_check_time(void)
++{
++    LARGE_INTEGER counter, freq;
++    NtQueryPerformanceCounter( &counter, &freq );
++    return counter.QuadPart * 8000 / freq.QuadPart; /* 8kHz */
++}
++
+ /* check for driver events if we detect that the app is not properly consuming messages */
+ static inline void check_for_driver_events( UINT msg )
+ {
+@@ -3358,7 +3366,7 @@ BOOL WINAPI NtUserPeekMessage( MSG *msg_out, HWND hwnd, UINT first, UINT last, U
+     int ret;
+ 
+     user_check_not_lock();
+-    if (thread_info->last_driver_time != NtGetTickCount())
++    if (thread_info->last_driver_time != get_driver_check_time())
+         check_for_driver_events( 0 );
+ 
+     ret = peek_message( &msg, hwnd, first, last, flags, 0, FALSE );
+@@ -3366,8 +3374,8 @@ BOOL WINAPI NtUserPeekMessage( MSG *msg_out, HWND hwnd, UINT first, UINT last, U
+ 
+     if (!ret)
+     {
+-        if (thread_info->last_driver_time == NtGetTickCount()) return FALSE;
+-        thread_info->last_driver_time = NtGetTickCount();
++        if (thread_info->last_driver_time == get_driver_check_time()) return FALSE;
++        thread_info->last_driver_time = get_driver_check_time();
+         flush_window_surfaces( TRUE );
+         ret = wait_message( 0, NULL, 0, QS_ALLINPUT, 0 );
+         /* if we received driver events, check again for a pending message */
+@@ -3375,7 +3383,7 @@ BOOL WINAPI NtUserPeekMessage( MSG *msg_out, HWND hwnd, UINT first, UINT last, U
+     }
+ 
+     check_for_driver_events( msg.message );
+-    thread_info->last_driver_time = NtGetTickCount() - 1;
++    thread_info->last_driver_time = get_driver_check_time() - 1;
+ 
+     /* copy back our internal safe copy of message data to msg_out.
+      * msg_out is a variable from the *program*, so it can't be used
+diff --git a/dlls/win32u/ntuser_private.h b/dlls/win32u/ntuser_private.h
+index 4221c25d65f..4d24c7dd9ef 100644
+--- a/dlls/win32u/ntuser_private.h
++++ b/dlls/win32u/ntuser_private.h
+@@ -131,7 +131,7 @@ struct user_thread_info
+     HANDLE                        server_queue;           /* Handle to server-side queue */
+     DWORD                         wake_mask;              /* Current queue wake mask */
+     DWORD                         changed_mask;           /* Current queue changed mask */
+-    DWORD                         last_driver_time;       /* Get/PeekMessage driver event time */
++    LONGLONG                      last_driver_time;       /* Get/PeekMessage driver event time */
+     DWORD                         last_getmsg_time;       /* Get/PeekMessage last request time */
+     WORD                          message_count;          /* Get/PeekMessage loop counter */
+     WORD                          hook_call_depth;        /* Number of recursively called hook procs */
+-- 
+2.47.1
+
