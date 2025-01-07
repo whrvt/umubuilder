@@ -31,6 +31,7 @@ readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/downl
 readonly ZSTD_VERSION="1.5.6"
 readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
 readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
+readonly UMU_LAUNCHER_VERSION="59a82ea8cd284c7535bc06b8f6156abb7da96f6a"
 
 parse_args() {
     local clean_build=false
@@ -184,7 +185,7 @@ prepare_sources() {
 
     # Prepare UMU launcher
     _message "Preparing umu-launcher sources..."
-    _repo_updater "${THIRD_PARTY_DIR}/umu-launcher" "${UMU_LAUNCHER_URL}"
+    _repo_updater "${THIRD_PARTY_DIR}/umu-launcher" "${UMU_LAUNCHER_URL}" "${UMU_LAUNCHER_VERSION}"
     cp -r "${THIRD_PARTY_DIR}/umu-launcher" "${WORK_DIR}/"
 
     if [[ -d "${PATCHES_DIR}/umu" ]]; then
