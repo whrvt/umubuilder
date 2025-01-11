@@ -24,7 +24,7 @@ index d0a0a4879b5..d1ab6f10254 100644
      main_loop();
      return 0;
 diff --git a/server/object.h b/server/object.h
-index 3b405e36db0..ec299dda21e 100644
+index 3b405e3..ec299dd 100644
 --- a/server/object.h
 +++ b/server/object.h
 @@ -284,10 +284,6 @@ extern struct object *get_directory_obj( struct process *process, obj_handle_t h
@@ -39,29 +39,20 @@ index 3b405e36db0..ec299dda21e 100644
  
  extern struct object *create_root_symlink( struct object *root, const struct unicode_str *name,
 diff --git a/server/thread.c b/server/thread.c
-index de78603698e..18dd3d6c7ca 100644
+index be7301f..723e70c 100644
 --- a/server/thread.c
 +++ b/server/thread.c
-@@ -37,9 +37,6 @@
- #define _WITH_CPU_SET_T
- #include <sched.h>
+@@ -233,26 +233,6 @@ static struct list thread_list = LIST_INIT(thread_list);
+ static int nice_limit;
  #endif
--#ifdef HAVE_SYS_RESOURCE_H
--#include <sys/resource.h>
--#endif
  
- #include "ntstatus.h"
- #define WIN32_NO_STATUS
-@@ -230,45 +227,6 @@ static const struct fd_ops thread_fd_ops =
- 
- static struct list thread_list = LIST_INIT(thread_list);
- 
--#if defined(__linux__) && defined(RLIMIT_NICE)
--static int nice_limit;
--
 -void init_threading(void)
 -{
+-#ifdef __linux__
+-#ifdef RLIMIT_NICE
 -    struct rlimit rlimit;
+-#endif
+-#ifdef RLIMIT_NICE
 -    if (!getrlimit( RLIMIT_NICE, &rlimit ))
 -    {
 -        rlimit.rlim_cur = rlimit.rlim_max;
@@ -70,35 +61,15 @@ index de78603698e..18dd3d6c7ca 100644
 -        else if (rlimit.rlim_max == -1) nice_limit = -20;
 -        if (nice_limit >= 0 && debug_level) fprintf(stderr, "wine: RLIMIT_NICE is <= 20, unable to use setpriority safely\n");
 -    }
--    if (nice_limit < 0 && debug_level) fprintf(stderr, "wine: Using setpriority to control niceness in the [%d,%d] range\n", nice_limit, -nice_limit );
--}
--
--static void apply_thread_priority( struct thread *thread, int base_priority )
--{
--    int min = -nice_limit, max = nice_limit, range = max - min, niceness;
--    /* FIXME: handle realtime priorities using SCHED_RR if possible */
--    if (base_priority > THREAD_BASE_PRIORITY_LOWRT) base_priority = THREAD_BASE_PRIORITY_LOWRT;
--    /* map an NT application band [1,15] base priority to [-nice_limit, nice_limit] */
--    niceness = (min + (base_priority - 1) * range / 14);
--    setpriority( PRIO_PROCESS, thread->unix_tid, niceness );
--}
--
--#else
--
--void init_threading(void)
--{
--}
--
--static void apply_thread_priority( struct thread *thread, int base_priority )
--{
--}
--
 -#endif
+-    if (nice_limit < 0 && debug_level) fprintf(stderr, "wine: Using setpriority to control niceness in the [%d,%d] range\n", nice_limit, -nice_limit );
+-#endif
+-}
 -
  /* initialize the structure for a newly allocated thread */
  static inline void init_thread_structure( struct thread *thread )
  {
-@@ -792,23 +750,13 @@ affinity_t get_thread_affinity( struct thread *thread )
+@@ -776,16 +756,6 @@ affinity_t get_thread_affinity( struct thread *thread )
      return mask;
  }
  
@@ -112,32 +83,44 @@ index de78603698e..18dd3d6c7ca 100644
 -    return class_offsets[priority_class - 1] + priority;
 -}
 -
+ #ifdef __linux__
+ /* maps an NT application band [1,15] base priority to [-nice_limit, nice_limit] */
+ static int get_unix_niceness( int base_priority )
+@@ -798,26 +768,6 @@ static int get_unix_niceness( int base_priority )
  #define THREAD_PRIORITY_REALTIME_HIGHEST 6
  #define THREAD_PRIORITY_REALTIME_LOWEST -7
  
+-static void apply_thread_priority( struct thread *thread, int priority_class, int priority )
+-{
+-    int base_priority = get_base_priority( priority_class, priority );
+-#ifdef __linux__
+-    int niceness;
+-
+-    /* FIXME: handle REALTIME class using SCHED_RR if possible, for now map it to highest non-realtime band */
+-    if (priority_class == PROCESS_PRIOCLASS_REALTIME) base_priority = 15;
+-#ifdef HAVE_SETPRIORITY
+-    if (nice_limit < 0)
+-    {
+-        niceness = get_unix_niceness( base_priority );
+-        if (setpriority( PRIO_PROCESS, thread->unix_tid, niceness ) != 0)
+-            fprintf( stderr, "wine: setpriority %d for pid %d failed: %d\n", niceness, thread->unix_tid, errno );
+-        return;
+-    }
+-#endif
+-#endif
+-}
+-
  int set_thread_priority( struct thread *thread, int priority_class, int priority )
  {
--    int min = THREAD_PRIORITY_LOWEST, max = THREAD_PRIORITY_HIGHEST, base_priority;
--
-+    int max = THREAD_PRIORITY_HIGHEST;
-+    int min = THREAD_PRIORITY_LOWEST;
-     if (priority_class == PROCESS_PRIOCLASS_REALTIME)
-     {
-         max = THREAD_PRIORITY_REALTIME_HIGHEST;
-@@ -823,13 +771,6 @@ int set_thread_priority( struct thread *thread, int priority_class, int priority
-         return STATUS_THREAD_IS_TERMINATING;
- 
+     int max = THREAD_PRIORITY_HIGHEST;
+@@ -840,7 +790,6 @@ int set_thread_priority( struct thread *thread, int priority_class, int priority
+         return 0;
      thread->priority = priority;
--
--    /* if unix_tid == -1, thread is gone or hasn't started yet, this will be called again from init_thread with a unix_tid */
--    if (thread->unix_tid == -1)
--        return STATUS_SUCCESS;
--
--    base_priority = get_base_priority( priority_class, priority );
--    apply_thread_priority( thread, base_priority );
-     return STATUS_SUCCESS;
+ 
+-    apply_thread_priority( thread, priority_class, priority );
+     return 0;
  }
  
 -- 
-2.47.0
+2.47.1
 

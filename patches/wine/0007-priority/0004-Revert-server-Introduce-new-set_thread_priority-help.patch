@@ -11,10 +11,10 @@ This reverts commit 06c82190c4199dbf8abec00b6d845aa110d2c400.
  2 files changed, 13 insertions(+), 27 deletions(-)
 
 diff --git a/server/thread.c b/server/thread.c
-index 18dd3d6c7ca..2231fcf3541 100644
+index 723e70c..9a5c5b9 100644
 --- a/server/thread.c
 +++ b/server/thread.c
-@@ -753,35 +753,25 @@ affinity_t get_thread_affinity( struct thread *thread )
+@@ -768,39 +768,25 @@ static int get_unix_niceness( int base_priority )
  #define THREAD_PRIORITY_REALTIME_HIGHEST 6
  #define THREAD_PRIORITY_REALTIME_LOWEST -7
  
@@ -30,13 +30,17 @@ index 18dd3d6c7ca..2231fcf3541 100644
 -    if ((priority < min || priority > max) &&
 -        priority != THREAD_PRIORITY_IDLE &&
 -        priority != THREAD_PRIORITY_TIME_CRITICAL)
--        return STATUS_INVALID_PARAMETER;
+-    {
+-        errno = EINVAL;
+-        return -1;
+-    }
 -
--    if (thread->state == TERMINATED)
--        return STATUS_THREAD_IS_TERMINATING;
--
+-    if (thread->process->priority == priority_class &&
+-        thread->priority == priority)
+-        return 0;
 -    thread->priority = priority;
--    return STATUS_SUCCESS;
+-
+-    return 0;
 -}
 -
  /* set all information about a thread */
@@ -45,8 +49,8 @@ index 18dd3d6c7ca..2231fcf3541 100644
  {
      if (req->mask & SET_THREAD_INFO_PRIORITY)
      {
--        int status = set_thread_priority( thread, thread->process->priority, req->priority );
--        if (status) set_error( status );
+-        if (set_thread_priority( thread, thread->process->priority, req->priority ))
+-            file_set_error();
 +        int max = THREAD_PRIORITY_HIGHEST;
 +        int min = THREAD_PRIORITY_LOWEST;
 +        if (thread->process->priority == PROCESS_PRIOCLASS_REALTIME)
@@ -63,16 +67,15 @@ index 18dd3d6c7ca..2231fcf3541 100644
      }
      if (req->mask & SET_THREAD_INFO_AFFINITY)
      {
-@@ -1602,8 +1592,6 @@ DECL_HANDLER(init_first_thread)
+@@ -1620,7 +1606,6 @@ DECL_HANDLER(init_first_thread)
+         process->affinity = current->affinity = get_thread_affinity( current );
      else
+     {
+-        set_thread_priority( current, current->process->priority, current->priority );
          set_thread_affinity( current, current->affinity );
+     }
  
--    set_thread_priority( current, process->priority, current->priority );
--
-     debug_level = max( debug_level, req->debug_level );
- 
-     reply->pid          = get_process_id( process );
-@@ -1633,7 +1621,6 @@ DECL_HANDLER(init_thread)
+@@ -1653,7 +1638,6 @@ DECL_HANDLER(init_thread)
  
      init_thread_context( current );
      generate_debug_event( current, DbgCreateThreadStateChange, &req->entry );
@@ -81,7 +84,7 @@ index 18dd3d6c7ca..2231fcf3541 100644
  
      reply->suspend = (current->suspend || current->process->suspend || current->context != NULL);
 diff --git a/server/thread.h b/server/thread.h
-index 416b01db318..baaf332a6d6 100644
+index 416b01d..baaf332 100644
 --- a/server/thread.h
 +++ b/server/thread.h
 @@ -129,7 +129,6 @@ extern void thread_cancel_apc( struct thread *thread, struct object *owner, enum
@@ -93,5 +96,5 @@ index 416b01db318..baaf332a6d6 100644
  extern int suspend_thread( struct thread *thread );
  extern int resume_thread( struct thread *thread );
 -- 
-2.47.0
+2.47.1
 

@@ -1,5 +1,5 @@
 From eb37b4201f8874a74951f0147c967d38196ffd75 Mon Sep 17 00:00:00 2001
-From: umubuilder <proton@umu.builder>
+From: William Horvath <william@horvath.blog>
 Date: Thu, 24 Oct 2024 17:40:24 -0700
 Subject: [PATCH] umu_run: Rely on an external wrapper to set
  PR_SET_CHILD_SUBREAPER instead of relying on CDLL.
@@ -12,7 +12,7 @@ This allows a fully statically linked umu-launcher to still have this prctl call
  3 files changed, 2 insertions(+), 70 deletions(-)
 
 diff --git a/umu/umu_run.py b/umu/umu_run.py
-index d90c6a8..a74ab8a 100755
+index 6c1eb9f..21d1516 100755
 --- a/umu/umu_run.py
 +++ b/umu/umu_run.py
 @@ -2,13 +2,11 @@ import os
@@ -29,7 +29,7 @@ index d90c6a8..a74ab8a 100755
  from errno import ENETUNREACH
  from zipfile import Path as ZipPath
  
-@@ -50,7 +48,6 @@ from umu.umu_plugins import set_env_toml
+@@ -49,7 +47,6 @@ from umu.umu_plugins import set_env_toml
  from umu.umu_proton import get_umu_proton
  from umu.umu_runtime import setup_umu
  from umu.umu_util import (
@@ -37,7 +37,7 @@ index d90c6a8..a74ab8a 100755
      get_library_paths,
      has_umu_setup,
      is_installed_verb,
-@@ -678,12 +675,9 @@ def run_in_steammode(proc: Popen) -> int:
+@@ -656,12 +653,9 @@ def run_in_steammode(proc: Popen) -> int:
  
  def run_command(command: tuple[Path | str, ...]) -> int:
      """Run the executable using Proton within the Steam Runtime."""
@@ -50,7 +50,7 @@ index d90c6a8..a74ab8a 100755
      is_gamescope_session: bool = (
          os.environ.get("XDG_CURRENT_DESKTOP") == "gamescope"
          or os.environ.get("XDG_SESSION_DESKTOP") == "gamescope"
-@@ -705,18 +699,6 @@ def run_command(command: tuple[Path | str, ...]) -> int:
+@@ -682,18 +676,6 @@ def run_command(command: tuple[Path | str, ...]) -> int:
      else:
          cwd = Path.cwd()
  
@@ -66,9 +66,9 @@ index d90c6a8..a74ab8a 100755
 -    prctl_ret = prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0, 0)
 -    log.debug("prctl exited with status: %s", prctl_ret)
 -
-     with Popen(
-         command,
-         start_new_session=True,
+     with Popen(command, start_new_session=True, cwd=cwd) as proc:
+         ret = run_in_steammode(proc) if is_steammode else proc.wait()
+         log.debug("Child %s exited with wait status: %s", proc.pid, ret)
 diff --git a/umu/umu_test.py b/umu/umu_test.py
 index e1a5aa5..84e99a7 100644
 --- a/umu/umu_test.py
