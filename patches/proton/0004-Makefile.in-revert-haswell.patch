@@ -6,7 +6,7 @@ index b86d2cc5..e4474332 100644
  endif
  
  CROSSLDFLAGS   += -Wl,--file-alignment,4096
--CFLAGS         ?= -O3 -march=haswell -mtune=generic
+-CFLAGS         ?= -O2 -march=core-avx2 -mtune=core-avx2
 +CFLAGS         ?= -O2 -march=nocona -mtune=core-avx2
  OPTIMIZE_FLAGS := $(CFLAGS) -mfpmath=sse
  SANITY_FLAGS   := -fwrapv -fno-strict-aliasing

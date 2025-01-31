@@ -1,11 +1,11 @@
 #!/bin/bash
 
-pkgver=9-13
+pkgver=9-14
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20250106-slr
+protontag=cachyos-9.0-20250126-slr
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -25,7 +25,9 @@ _main() {
     _envsetup || _failure "Failed preparing build environment."
     _dirsetup_initial || _failure "Failed initial directory setup."
 
-    if [ "${_do_umu_only}" = "true" ]; then
+    if [ "${_do_rearchive}" = "true" ]; then
+        _create_archive || _failure "Couldn't create the compressed archive. You need to have already built proton to use this."
+    elif [ "${_do_umu_only}" = "true" ]; then
         "${umu_builder_dir}/build.sh" || _failure "Building umu-run failed."
     elif [ "${_do_build}" = "true" ]; then
         _sources || _failure "Failed to prepare sources."
@@ -46,6 +48,7 @@ _parse_args() {
     _do_bundle_umu=true
     _do_cleanbuild=false
     _do_umu_only=false
+    _do_rearchive=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -54,6 +57,7 @@ _parse_args() {
             no-bundle-umu) _do_bundle_umu=false ;;
             cleanbuild) _do_cleanbuild=true ;;
             umu-only) _do_umu_only=true ;;
+            rearchive) _do_rearchive=true ;;
             *) _warning "Unknown option: $1" ;;
         esac
         shift
@@ -122,10 +126,19 @@ _build() {
 
     make -j1 redist || _failure "Build failed."
 
+    _create_archive
+}
+##############################################
+# Create the final compressed archive.
+##############################################
+_create_archive() {
+    cd "${builddir}" || _failure "Can't build because there is no build directory."
+
     if [ "${_do_bundle_umu}" = "true" ]; then
         _message "Starting static umu-run bundling procedure..."
         if ! _build_umu_run; then
-            _warning "Failed to build umu-run. Continuing without it."
+            _warning "Failed to build umu-run"
+            { read -rp "\033[0;33m[!] %s\033[0m\n Continue without it? (y/N): " confirm && [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] ; } || _failure
         else
             _message "Copying umu-run to build directory..."
             rm -rf "${builddir}/${buildname}/umu-run"
@@ -235,6 +248,7 @@ _help() {
     _message "  cleanbuild   Run 'make clean' in the build directory before 'make'"
     _message "  no-bundle-umu Don't build and bundle umu-run with Proton"
     _message "  umu-only     Only build the static umu-run self-extracting executable"
+    _message "  rearchive Just re-bundle umu-run and proton into the final tarball. You must have already built proton to use this, but umu will be rebuilt."
     echo ""
     _message "No arguments grabs sources, patches, builds, and installs"
 
@@ -248,6 +262,7 @@ _print_config() {
     _message "  bundle umu: ${_do_bundle_umu}"
     _message "  clean build: ${_do_cleanbuild}"
     _message "  umu only: ${_do_umu_only}"
+    _message "  rearchive: ${_do_rearchive}"
 }
 ##############################################
 # Run

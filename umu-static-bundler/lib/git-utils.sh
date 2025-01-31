@@ -100,13 +100,13 @@ _repo_updater() {
         # Keep submodules updated
         if [ -f ".gitmodules" ]; then
             _message "Updating submodules for ${repo_path}."
-
-            if ! git submodule update --init --depth 1 --recursive -f --progress 2> >(tee /tmp/submodule_error >&2); then
+            submodule_error=$(mktemp)
+            if ! git submodule update --init --depth 1 --recursive -f --progress 2> >(tee "${submodule_error}" >&2); then
                 # If it fails, check if it's due to directory conflicts
-                if grep -q "destination path.*already exists and is not an empty directory" /tmp/submodule_error; then
+                if grep -q "destination path.*already exists and is not an empty directory" "${submodule_error}"; then
                     # Extract the problematic path from the error message
                     local conflict_path
-                    conflict_path=$(grep "destination path.*already exists" /tmp/submodule_error | sed -E "s/.*path '(.*)' already exists.*/\1/")
+                    conflict_path=$(grep "destination path.*already exists" "${submodule_error}" | sed -E "s/.*path '(.*)' already exists.*/\1/")
                     if [ -n "${conflict_path}" ] && [ -d "${conflict_path}" ] && [ ! -d "${conflict_path}/.git" ]; then
                         # Safety check: ensure the conflict path is under repo_path
                         local abs_repo_path
@@ -122,10 +122,10 @@ _repo_updater() {
                             _failure "Security check failed: conflicting path ${conflict_path} is outside repository"
                         fi
                     else
-                        _failure "Submodule update failed: $(cat /tmp/submodule_error)"
+                        _failure "Submodule update failed: $(cat "${submodule_error}")"
                     fi
                 else
-                    _failure "Submodule update failed: $(cat /tmp/submodule_error)"
+                    _failure "Submodule update failed: $(cat "${submodule_error}")"
                 fi
             fi
 
