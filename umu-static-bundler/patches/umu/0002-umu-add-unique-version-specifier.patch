@@ -1,0 +1,21 @@
+From 8cc801f5d007535261a69648c91d0ca9718294f0 Mon Sep 17 00:00:00 2001
+From: William Horvath <william@horvath.blog>
+Date: Fri, 31 Jan 2025 11:41:21 -0800
+Subject: [PATCH] umu: add unique version specifier
+
+---
+ umu/__init__.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/umu/__init__.py b/umu/__init__.py
+index e99a85c..7e05b9e 100644
+--- a/umu/__init__.py
++++ b/umu/__init__.py
+@@ -1,3 +1,3 @@
+-__version__ = "1.1.4"  # noqa: D104
++__version__ = "1.1.4.99"  # noqa: D104
+ __runtime_versions__ = (("sniper", "steamrt3"), ("soldier", "steamrt2"))
+ __runtime_version__ = __runtime_versions__[0]
+-- 
+2.48.1
+

@@ -6,7 +6,7 @@ int main(int argc, char *argv[]) {
   struct wrapper_config config;
   wrp_status_t status;
 
-#ifdef DEBUG
+#ifndef NDEBUG
   log_init(LOG_DEBUG, 1); /* Enable debug output in debug builds */
 #else
   log_init(LOG_INFO, 1); /* Default to info level for release */

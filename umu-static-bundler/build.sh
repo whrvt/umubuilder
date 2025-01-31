@@ -25,13 +25,13 @@ source "${PROJECT_ROOT}/lib/git-utils.sh"
 
 # Source versions
 readonly PYTHON_VERSION="3.13.1"
-readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241206/cpython-${PYTHON_VERSION}+20241206-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20250115/cpython-${PYTHON_VERSION}+20250115-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 readonly LIBARCHIVE_VERSION="3.7.7"
 readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
 readonly ZSTD_VERSION="1.5.6"
 readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
 readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
-readonly UMU_LAUNCHER_VERSION="e9cb4d764013d4c8c3d1166f59581da8f56a3d83"
+readonly UMU_LAUNCHER_VERSION="7a71163b79e56222fe3f3097d1e71208a91a1a3b"
 
 parse_args() {
     local clean_build=false

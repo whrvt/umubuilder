@@ -149,7 +149,7 @@ class PythonDistributionManager:
                 runtime_imports.update(analyzer.runtime_imports)
                 file_stats['analyzed'] += 1
             except (SyntaxError, FileNotFoundError) as e:
-                self.logger.warning(f"Error analyzing {path}: {e}")
+                self.logger.warning(f"Warning: analyzing {path} raised {e}")
                 file_stats['errors'] += 1
 
         return runtime_imports, file_stats

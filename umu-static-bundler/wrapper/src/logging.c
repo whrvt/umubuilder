@@ -100,7 +100,7 @@ static void write_log(log_level_t level, const char *fmt, va_list args) {
 }
 
 /* Public logging functions */
-#ifdef DEBUG
+#ifndef NDEBUG
 void _log_debug(const char *fmt, ...) {
   /* Skip if debug not enabled at runtime */
   if (!log_config.debug_enabled) {

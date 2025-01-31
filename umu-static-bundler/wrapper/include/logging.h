@@ -25,7 +25,7 @@ int log_get_colors(void);
  * - DEBUG defined at compile-time AND
  * - PYB_DEBUG=1 environment variable set at runtime
  */
-#ifdef DEBUG
+#ifndef NDEBUG
 #define log_debug(...) _log_debug(__VA_ARGS__)
 void _log_debug(const char *fmt, ...);
 #else
