@@ -1,11 +1,11 @@
 #!/bin/bash
 
-pkgver=9-14
+pkgver=9-15
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20250126-slr
+protontag=cachyos-9.0-20250211-slr
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -33,7 +33,7 @@ _main() {
         _sources || _failure "Failed to prepare sources."
         _patch proton wine || _failure "Failed to apply patches."
         _build || _failure "Build failed."
-        [ "${_do_install}" = "true" ] && _install || _failure "Install failed."
+        { [ "${_do_install}" = "true" ] && _install ; } || _failure "Install failed."
     fi
 
     _message "Script finished."
@@ -200,6 +200,13 @@ _patch() {
                 _message "Applying GE patches"
                 cd "${target_dir}" || return 1
                 ./patches/protonprep-valve-staging.sh || _failure "Failed to apply GE protonprep patch"
+                cd - || return 1
+            fi
+            if [ -n "${protonurl:-}" ] && [[ "${protonurl}" =~ "cachyos" ]] && [ -f "${target_dir}/patches/apply.sh" ]; then
+                _message "Applying CachyOS patches"
+                cd "${target_dir}" || return 1
+                ./patches/apply.sh || _failure "Failed to apply CachyOS Proton patches"
+                cd - || return 1
             fi
 
             # Update CPU count in makefiles

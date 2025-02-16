@@ -37,6 +37,7 @@ cd "${WORK_DIR}/wrapper" || _failure "No wrapper src dir?"
 export BINARY_NAME="umu-run"
 
 # Pass absolute paths to the Makefile for version file handling
+PYTHON_VERSION="$("${PYTHON_DIR}/bin/python" --version | cut -f2 -d' ')" \
 PYTHON_SCRIPT="umu-run" \
 VERSION_FILE="${STAGED_VERSION}" \
 VERSION_FILE_NAME="umu_version.json" \

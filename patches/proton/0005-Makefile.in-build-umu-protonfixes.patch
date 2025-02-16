@@ -56,9 +56,9 @@ index f62b380..ba2aa1e 100644
  	cp -a $(PROTONFIXES_TARGET)/libmspack.so.0 $(REDIST_DIR)/files/lib64/
  	cp $(PROTONFIXES_TARGET)/libmspack.so.0.1.0 $(REDIST_DIR)/files/lib64/
  	mv $(REDIST_DIR) $(BUILD_NAME)
--	tar -cvzf $(BUILD_NAME).tar.gz $(BUILD_NAME)
--	sha512sum $(BUILD_NAME).tar.gz > $(BUILD_NAME).sha512sum
--	@echo "Proton build available at $(BUILD_NAME).tar.gz"
+-	XZ_OPT=-9 tar -cvJf $(BUILD_NAME).tar.xz $(BUILD_NAME)
+-	sha512sum $(BUILD_NAME).tar.xz > $(BUILD_NAME).sha512sum
+-	@echo "Proton build available at $(BUILD_NAME).tar.xz"
 -
  
  ##
