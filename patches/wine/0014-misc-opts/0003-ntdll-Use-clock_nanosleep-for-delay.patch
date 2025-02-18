@@ -1,14 +1,14 @@
-From cf04cdd95fc5109bf3329c37cb2260618174e68b Mon Sep 17 00:00:00 2001
+From 3bd60bcc5a9ee479f371c1e0d1eae7741394f02a Mon Sep 17 00:00:00 2001
 From: William Horvath <william@horvath.blog>
 Date: Wed, 12 Feb 2025 14:04:16 -0800
-Subject: [PATCH 2/2] ntdll: Use clock_nanosleep for delay.
+Subject: [PATCH 3/3] ntdll: Use clock_nanosleep for delay.
 
 ---
  dlls/ntdll/unix/sync.c | 66 ++++++++++++++++++++++++++++++------------
  1 file changed, 48 insertions(+), 18 deletions(-)
 
 diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
-index fc5ea70be0e..315a66e6b91 100644
+index fc7cd9eb24f..3aae106ea9f 100644
 --- a/dlls/ntdll/unix/sync.c
 +++ b/dlls/ntdll/unix/sync.c
 @@ -71,6 +71,11 @@

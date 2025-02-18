@@ -31,7 +31,7 @@ readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/downl
 readonly ZSTD_VERSION="1.5.6"
 readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
 readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
-readonly UMU_LAUNCHER_VERSION="e9438ae2f5f046421e355789345d9981b7c3f9d8"
+readonly UMU_LAUNCHER_VERSION="c0a94426030f57f965929bb1f48c4f41248bf59f"
 
 parse_args() {
     local clean_build=false
@@ -126,6 +126,7 @@ _check_cache_state() {
 static_python_url=${STATIC_PYTHON_URL}
 libarchive_version=${LIBARCHIVE_VERSION}
 zstd_version=${ZSTD_VERSION}
+umu_version=${UMU_LAUNCHER_VERSION}
 compiler_flags=$(grep '^CFLAGS' "${BUILDER_DIR}/docker/Makefile")
 linker_flags=$(grep '^LDFLAGS' "${BUILDER_DIR}/docker/Makefile")
 EOF
