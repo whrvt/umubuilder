@@ -1,6 +1,7 @@
 /umu-static-bundler/third_party
 /umu-static-bundler/work
 /umu-static-bundler/build
+/umu-static-bundler/.cache
 /garbage
 /build
 /build_tarballs
@@ -10,3 +11,4 @@
 .vscode/
 git-tracked-files.txt
 umu-static-bundler-backup/
+/.cache

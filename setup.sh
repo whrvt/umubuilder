@@ -230,11 +230,11 @@ _sources() {
     for component in "${components[@]}"; do
         case $component in
             proton)
-                _repo_updater "${scriptdir}/proton" "${protonurl}" "${protontag}"
+                _repo_updater "${scriptdir}" "${scriptdir}/proton" "${protonurl}" "${protontag}"
                 rm -rf "${srcdir}/protonfixes" 2>/dev/null || true
                 ;;
             protonfixes)
-                _repo_updater "${scriptdir}/protonfixes" "${umu_protonfixesurl}"
+                _repo_updater "${scriptdir}" "${scriptdir}/protonfixes" "${umu_protonfixesurl}"
                 [ -d "${srcdir}"/protonfixes ] && rm -rf "${srcdir}"/protonfixes
                 rsync -a --exclude='.git' --exclude='.git*' "${scriptdir}"/protonfixes "${srcdir}"/ || _failure "Couldn't copy protonfixes to the proton source... Do you have rsync?"
                 ;;

@@ -9,9 +9,10 @@
 # - Repository state verification
 
 _repo_updater() {
-    local repo_path="$1"
-    local repo_url="$2"
-    local specific_ref="${3:-}"
+    local cache_dir="$1/.cache"
+    local repo_path="$2"
+    local repo_url="$3"
+    local specific_ref="${4:-}"
     local is_new_clone=false
     local timestamp=$(date +%Y%m%d%H%M%S)
 
@@ -28,7 +29,7 @@ _repo_updater() {
 
     cd "${repo_path}" || _failure "Couldn't change directory to ${repo_path}."
 
-    # set a fake git config so it's not prompted
+    # Set optimal git configuration for shallow clones
     export GIT_COMMITTER_NAME="umubuilder"
     export EMAIL="proton@umu.builder"
     git config user.email "proton@umu.builder"
@@ -52,18 +53,79 @@ _repo_updater() {
 
     local target_ref="${specific_ref:-origin/HEAD}"
 
-    # For unshallow fetching specific commits while keeping other fetches shallow
+    # specific commit hashes need special handling, setup a cache to speed it up on subsequent runs
+    mkdir -p "${cache_dir}"
+
+    local repo_cache="${cache_dir}/$(basename "${repo_path}")"
+    if [ ! -d "${repo_cache}" ]; then
+        git init --bare "${repo_cache}" >/dev/null 2>&1
+        git -C "${repo_cache}" config core.compression 0
+    fi
+
     if [ -n "${specific_ref}" ] && [[ "${specific_ref}" =~ ^[0-9a-f]{5,40}$ ]]; then
-        # If it looks like a commit hash, deepen until we find it
-        local depth=1
-        while ! git cat-file -e "${specific_ref}^{commit}" 2>/dev/null; do
-            if [ ${depth} -gt 100 ]; then
-                _failure "Commit ${specific_ref} not found within reasonable history"
+        # Check if commit exists in cache
+        if git -C "${repo_cache}" cat-file -e "${specific_ref}^{commit}" 2>/dev/null; then
+            _message "Found commit ${specific_ref} in cache"
+            # Fetch from cache into main repository
+            git remote add cache "${repo_cache}" 2>/dev/null || git remote set-url cache "${repo_cache}"
+            git fetch --depth 1 cache "${specific_ref}"
+        else
+            # Fetch branch metadata and recent commits
+            git fetch --depth 1 origin '+refs/heads/*:refs/remotes/origin/*'
+
+            # Get list of remote branches sorted by most recently modified
+            local branches
+            branches=$(git for-each-ref --sort=-committerdate refs/remotes/origin --format='%(refname)')
+
+            # Try each branch with a slightly deeper history
+            local found_branch=""
+            while IFS= read -r branch; do
+                # Skip origin/HEAD
+                [[ "${branch}" == "refs/remotes/origin/HEAD" ]] && continue
+
+                # Deepen this branch by a few commits
+                branch_name="${branch#refs/remotes/origin/}"
+                _message "Checking branch ${branch_name} for commit ${specific_ref}"
+                git fetch --depth 10 origin "${branch_name}"
+
+                if git branch -r --contains "${specific_ref}" | grep -q "${branch#refs/remotes/}"; then
+                    found_branch="${branch_name}"
+                    break
+                fi
+            done <<<"${branches}"
+
+            if [ -n "${found_branch}" ]; then
+                # Found the branch, fetch it with history
+                _message "Found commit ${specific_ref} in branch ${found_branch}"
+                git fetch --depth 1 origin "${found_branch}"
+            else
+                # Fallback to incremental deepening if branch not found
+                local depth=1
+                while ! git cat-file -e "${specific_ref}^{commit}" 2>/dev/null; do
+                    if [ ${depth} -gt 100 ]; then
+                        _failure "Commit ${specific_ref} not found within reasonable history"
+                    fi
+                    _message "Deepening repository to find commit ${specific_ref}..."
+                    depth=$((depth * 2))
+                    git fetch --depth=${depth} origin || true
+                done
             fi
-            _message "Deepening repository to find commit ${specific_ref}..."
-            depth=$((depth * 2))
-            git fetch --depth=${depth} origin || true
-        done
+
+            # If we found the commit, cache it for future use
+            if git cat-file -e "${specific_ref}^{commit}" 2>/dev/null; then
+                _message "Caching commit ${specific_ref} for future use"
+                # Create a temporary packfile containing just this commit
+                local pack_dir=$(mktemp -d)
+                git rev-parse "${specific_ref}" >"${pack_dir}/want"
+                git rev-list --objects --no-walk --stdin <"${pack_dir}/want" >"${pack_dir}/objects"
+                git pack-objects --stdout <"${pack_dir}/objects" >"${pack_dir}/pack"
+
+                # Import the packfile into our cache
+                cat "${pack_dir}/pack" | git -C "${repo_cache}" unpack-objects -q
+                git -C "${repo_cache}" update-ref "refs/heads/cached-${specific_ref}" "${specific_ref}"
+                rm -rf "${pack_dir}"
+            fi
+        fi
         target_ref="${specific_ref}"
     else
         git fetch --depth 1 origin
@@ -187,4 +249,3 @@ _patch_dir() {
 
     return 0
 }
-

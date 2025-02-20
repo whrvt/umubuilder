@@ -28,7 +28,7 @@ readonly PYTHON_VERSION="3.13.2"
 readonly STATIC_PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20250212/cpython-${PYTHON_VERSION}+20250212-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 readonly LIBARCHIVE_VERSION="3.7.7"
 readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
-readonly ZSTD_VERSION="1.5.6"
+readonly ZSTD_VERSION="1.5.7"
 readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
 readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
 readonly UMU_LAUNCHER_VERSION="c0a94426030f57f965929bb1f48c4f41248bf59f"
@@ -186,7 +186,7 @@ prepare_sources() {
 
     # Prepare UMU launcher
     _message "Preparing umu-launcher sources..."
-    _repo_updater "${THIRD_PARTY_DIR}/umu-launcher" "${UMU_LAUNCHER_URL}" "${UMU_LAUNCHER_VERSION}"
+    _repo_updater "${PROJECT_ROOT}" "${THIRD_PARTY_DIR}/umu-launcher" "${UMU_LAUNCHER_URL}" "${UMU_LAUNCHER_VERSION}"
     cp -r "${THIRD_PARTY_DIR}/umu-launcher" "${WORK_DIR}/"
 
     if [[ -d "${PATCHES_DIR}/umu" ]]; then
