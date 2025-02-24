@@ -9,6 +9,7 @@ wrp_status_t init_wrapper_config(struct wrapper_config *config,
                                  const char *version_file,
                                  unsigned long version_sum) {
   const char *home;
+  const char *xdg_data_home;
   wrp_status_t status;
 
   if (!config || !app_name || !python_version) {
@@ -24,15 +25,19 @@ wrp_status_t init_wrapper_config(struct wrapper_config *config,
   config->meta.dir_mode = 0700; /* Default directory permissions */
   config->meta.timeout = LOCK_TIMEOUT;
 
-  /* Get home directory for installation path */
-  if (!(home = secure_getenv("HOME"))) {
-    log_error("Cannot determine user home directory");
-    return WRP_EENV;
+  if ((xdg_data_home = secure_getenv("XDG_DATA_HOME"))) {
+    status = path_join(config->paths.base_dir, sizeof(config->paths.base_dir),
+                       xdg_data_home, PYBSTRAP_SUBDIR, NULL);
+  } else {
+    if (!(home = secure_getenv("HOME"))) {
+      log_error("Cannot determine user home directory");
+      return WRP_EENV;
+    }
+
+    status = path_join(config->paths.base_dir, sizeof(config->paths.base_dir),
+                       home, ".local/share", PYBSTRAP_SUBDIR, NULL);
   }
 
-  /* Construct and validate installation paths */
-  status = path_join(config->paths.base_dir, sizeof(config->paths.base_dir),
-                     home, DEFAULT_PYBSTRAP_DIR, NULL);
   if (status != WRP_OK) {
     return handle_error(status, NULL, NULL,
                         "Failed to construct base directory path");

@@ -57,7 +57,7 @@ typedef enum {
 #define LOCK_TIMEOUT 5
 
 /* Base directory for all installations */
-#define DEFAULT_PYBSTRAP_DIR ".local/share/pybstrap"
+#define PYBSTRAP_SUBDIR "pybstrap"
 
 /* Archive section identifiers */
 #define SECTION_PYTHON "./python/"
