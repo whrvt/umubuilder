@@ -12,3 +12,4 @@
 git-tracked-files.txt
 umu-static-bundler-backup/
 /.cache
+umu-static-bundler/.cache
