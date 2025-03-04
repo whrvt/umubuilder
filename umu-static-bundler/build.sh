@@ -31,7 +31,7 @@ readonly LIBARCHIVE_URL="https://github.com/libarchive/libarchive/releases/downl
 readonly ZSTD_VERSION="1.5.7"
 readonly ZSTD_URL="https://github.com/facebook/zstd/releases/download/v${ZSTD_VERSION}/zstd-${ZSTD_VERSION}.tar.zst"
 readonly UMU_LAUNCHER_URL="https://github.com/Open-Wine-Components/umu-launcher.git"
-readonly UMU_LAUNCHER_VERSION="c0a94426030f57f965929bb1f48c4f41248bf59f"
+readonly UMU_LAUNCHER_VERSION="30afc73b778d5edb1eb697a08a14598acf82a677"
 
 parse_args() {
     local clean_build=false

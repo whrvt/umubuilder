@@ -1,11 +1,11 @@
 #!/bin/bash
 
-pkgver=9-15
+pkgver=9-16
 buildname="proton-osu"
 pkgname="${buildname}-${pkgver}"
 
 protonurl=https://github.com/CachyOS/proton-cachyos.git
-protontag=cachyos-9.0-20250211-slr
+protontag=cachyos-9.0-20250227-slr
 protonsdk="registry.gitlab.steamos.cloud/proton/sniper/sdk:latest"
 
 umu_protonfixesurl=https://github.com/Open-Wine-Components/umu-protonfixes.git
@@ -95,7 +95,9 @@ _envsetup() {
     export DISPLAY=
 
     # exported for _patch
-    export CPUs="$(($(nproc) + 1))"
+    CPUs="$(($(nproc) + 1))"
+    [ -z "${CPUs}" ] && CPUs=4
+    export CPUs
     export srcdir="${scriptdir}/proton"
     export patchdir="${scriptdir}/patches"
     export protonurl
@@ -103,6 +105,7 @@ _envsetup() {
     export MAKEFLAGS="-j$CPUs"
     export NINJAFLAGS="-j$CPUs"
     export SUBJOBS="$CPUs"
+    export J="$CPUs"
 }
 ##############################################
 # Build
@@ -150,7 +153,7 @@ _create_archive() {
     _message "Creating archive: ${pkgname}.tar.xz"
     XZ_OPT="-9 -T0" tar -Jcf "${build_out_dir}"/"${pkgname}".tar.xz --numeric-owner --owner=0 --group=0 --null "${buildname}" &&
     sha512sum "${build_out_dir}"/"${pkgname}".tar.xz > "${build_out_dir}"/"${pkgname}".sha512sum &&
-    _message "${pkgname}.tar.xz is now ready in the build_tarballs directory"
+        _message "${pkgname}.tar.xz is now ready in the build_tarballs directory"
 }
 ##############################################
 # Build a static umu-run redistributable
@@ -182,7 +185,8 @@ _patch() {
     [ -z "${*}" ] && _failure "No directories specified to _patch."
     [ -z "${srcdir:-}" ] && _failure "srcdir is not set"
     [ -z "${patchdir:-}" ] && _failure "patchdir is not set"
-    [ -z "${CPUs:-}" ] && CPUs=$(($(nproc) + 1))
+    [ -z "${CPUs:-}" ] && CPUs="$(($(nproc) + 1))"
+    [ -z "${CPUs}" ] && CPUs=4
 
     for subdir in "${@}"; do
         local target_dir
@@ -250,12 +254,12 @@ _help() {
     _message "./setup.sh [options]"
     echo ""
     _message "Options:"
-    _message "  help         Show this help message"
-    _message "  buildonly    Only build without installing to the steam compatibility tools directory"
-    _message "  cleanbuild   Run 'make clean' in the build directory before 'make'"
+    _message "  help          Show this help message"
+    _message "  buildonly     Only build without installing to the steam compatibility tools directory"
+    _message "  cleanbuild    Run 'make clean' in the build directory before 'make'"
     _message "  no-bundle-umu Don't build and bundle umu-run with Proton"
-    _message "  umu-only     Only build the static umu-run self-extracting executable"
-    _message "  rearchive Just re-bundle umu-run and proton into the final tarball. You must have already built proton to use this, but umu will be rebuilt."
+    _message "  umu-only      Only build the static umu-run self-extracting executable"
+    _message "  rearchive     Just re-bundle umu-run and proton into the final tarball. You must have already built proton to use this, but umu will be rebuilt."
     echo ""
     _message "No arguments grabs sources, patches, builds, and installs"
 
